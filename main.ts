@@ -4,11 +4,13 @@
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
+	TFile, MarkdownView,
 	Modal,
 } from 'obsidian';
 import $ from 'cash-dom';
 import { Cash } from 'cash-dom';
 import TelegraphClient from './telegraph';
+import { elementToContentNodes } from './telegraph/utils'
 
 
 interface PluginSettings {
@@ -34,11 +36,48 @@ export default class TelegraphPublishPlugin extends Plugin {
 		// add settings tab
 		this.addSettingTab(new SettingTab(this.app, this));
 
+		// add sidebar button
+		this.addRibbonIcon('paper-plane', "Publish to Telegraph", async (evt: MouseEvent) => {
+			await this.publishActiveFile()
+		});
+
+		// add command
+		this.addCommand({
+			id: 'publish-to-telegraph',
+			name: "Publish to Telegraph",
+			callback: async () => {
+				await this.publishActiveFile()
+			}
+		});
+
 		// debug code
 		// if (DEBUG) {
 		// 	this.debugModal = new PublishModal(this.app, imageFile as TFile)
 		// 	this.debugModal.open()
 		// }
+	}
+
+	async publishActiveFile() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+		if (!view) {
+			// TODO error modal
+			return
+		}
+
+		// .markdown-reading-view
+		const containerEl = view.previewMode.containerEl
+		const contentContainerEl = containerEl.children[0].children[1]
+		console.log('contentContainerEl', contentContainerEl)
+
+		const nodes = elementToContentNodes(contentContainerEl as HTMLElement)
+		console.log('nodes', nodes)
+		return
+		const page = await this.getClient().createPage({
+			title: view.file.basename,
+			author_name: this.settings.username,
+			content:nodes,
+		})
+		console.log('page', page.url, page)
 	}
 
 	onunload() {
