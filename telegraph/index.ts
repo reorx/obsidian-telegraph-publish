@@ -24,7 +24,7 @@ export default class TelegraphClient {
 	req.body = JSON.stringify(data),
 	req.contentType = 'application/json'
 	const res = await requestUrl(req)
-	console.log('request data', data)
+	// console.log('request data', data)
 
 	if (res.status !== 200) {
       	throw new Error(`TelegraphClient.request failed: ${res.status}, ${res.text}`)

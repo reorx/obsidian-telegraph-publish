@@ -5,11 +5,15 @@ const availableAttrs = ['href', 'src']
 const availableTags = [
 	'a', 'aside', 'b', 'blockquote', 'br', 'code', 'em', 'figcaption', 'figure', 'h3', 'h4', 'hr', 'i', 'iframe', 'img', 'li', 'ol', 'p', 'pre', 's', 'strong', 'u', 'ul', 'video',
 ]
+const availableInlineTags = [
+	'a', 'aside', 'b', 'blockquote', 'br', 'code', 'em',
+	'i', 's', 'strong', 'u',
+]
 
 const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => {
-	const originTag = el.tagName.toLowerCase()
+	const tag = el.tagName.toLowerCase()
 	const nodeElement: NodeElement = {
-		tag: originTag,
+		tag,
 	}
 
 	// convert tag
@@ -33,7 +37,7 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 
 	// only return new node whose tag is in availableTags
 	if (availableTags.indexOf(nodeElement.tag) === -1) {
-		return [null, originTag]
+		return [null, tag]
 	}
 
 	// set attributes
@@ -47,16 +51,16 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 		nodeElement.attrs = attrs
 	}
 
-	return [nodeElement, originTag]
+	return [nodeElement, tag]
 }
 
-export const elementToContentNodes = (el: HTMLElement | Text, parentOriginTag: string | null = null): Array<ContentNode> => {
+export const elementToContentNodes = (el: HTMLElement | Text, unwrapBlock: boolean|null = null, parentTag: string | null = null): Array<ContentNode> => {
 	if (el instanceof Text) {
-		const text = el.data.trim()
-		if (text.length === 0) {
+		const text = el.data
+		if (text.trim().length === 0) {
 			return []
 		}
-		if (parentOriginTag === 'h4' || parentOriginTag === 'h5') {
+		if (parentTag === 'h4' || parentTag === 'h5') {
 			return [{
 				tag: 'strong',
 				children: [text],
@@ -70,53 +74,71 @@ export const elementToContentNodes = (el: HTMLElement | Text, parentOriginTag: s
 		return []
 	}
 
-	const [nodeElement, originTag] = elementToNodeElement(el)
+	const [nodeElement, tag] = elementToNodeElement(el)
+	let shouldUnwrap = !nodeElement
 	if (nodeElement) {
-		// handle special tags
-		// because telegraph does not support nested list, we have to get all content of <li> as a single string
-		switch (nodeElement.tag) {
-			case 'li':
-				nodeElement.children = [el.innerText.trim()]
-				return [nodeElement]
+		const isBlock = availableInlineTags.indexOf(nodeElement.tag) === -1
+		if (isBlock && unwrapBlock) {
+			shouldUnwrap = true
 		}
-
-		// add children
-		// console.log('node', el, nodeElement)
-		const children = []
-		for (let childEl of el.childNodes) {
-			children.push(...elementToContentNodes(childEl as HTMLElement | Text, originTag))
-
-			// handle special tags
-			switch (originTag) {
-				case 'h4':
-				case 'h5':
-				case 'h6':
-					for (let i = 0; i < children.length; i++) {
-						const child = children[i]
-						if (isString(child)) {
-							nodeElement.children[i] = {
-								tag: 'strong',
-								children: [child],
-							}
-						}
-					}
-					break
-			}
-		}
-		// console.log(el.tagName, 'childNodes', el.childNodes)
-		// console.log(el.tagName, 'children', children)
-		if (children.length > 0)
-			nodeElement.children = children
-		return [nodeElement]
-	} else {
+	}
+	if (shouldUnwrap) {
 		// unwrap the current element
 		// console.log('unwrap', el)
 		const nodes = []
 		for (let childEl of el.childNodes) {
-			nodes.push(...elementToContentNodes(childEl as HTMLElement | Text))
+			nodes.push(...elementToContentNodes(childEl as HTMLElement | Text, unwrapBlock))
 		}
 		return nodes
 	}
+
+	// handle special tags
+	switch (nodeElement.tag) {
+		case 'li':
+			// because telegraph does not support nested list, all block elements in <li> should be unwrapped
+			unwrapBlock = true
+			break
+	}
+
+	// add children
+	// console.log('node', el, nodeElement)
+	const children: Array<ContentNode> = []
+	for (let childEl of el.childNodes) {
+		children.push(...elementToContentNodes(childEl as HTMLElement | Text, unwrapBlock, tag))
+
+		// handle special tags for children
+		switch (tag) {
+			case 'h4':
+			case 'h5':
+			case 'h6':
+				for (let i = 0; i < children.length; i++) {
+					const child = children[i]
+					if (isString(child)) {
+						nodeElement.children[i] = {
+							tag: 'strong',
+							children: [child],
+						}
+					}
+				}
+				break
+			case 'li':
+				// add LF for continuous text child
+				for (let i = 0; i < children.length; i++) {
+					const child = children[i]
+					let next: ContentNode
+					if (i + 1 < children.length)
+					 	next = children[i + 1]
+					if (isString(child) && next && isString(next) && child[child.length - 1] !== '\n') {
+						children[i] = child + '\n'
+					}
+				}
+		}
+	}
+	// console.log(el.tagName, 'childNodes', el.childNodes)
+	// console.log(el.tagName, 'children', children)
+	if (children.length > 0)
+		nodeElement.children = children
+	return [nodeElement]
 }
 
 const isString = (node: ContentNode): node is string => {

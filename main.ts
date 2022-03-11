@@ -45,7 +45,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 		// add sidebar button
 		this.addRibbonIcon('paper-plane', "Publish to Telegraph", async (evt: MouseEvent) => {
-			await this.publishActiveFile()
+			await this.confirmPublish()
 		});
 
 		// add command
@@ -53,7 +53,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			id: 'publish-to-telegraph',
 			name: "Publish to Telegraph",
 			callback: async () => {
-				await this.publishActiveFile()
+				await this.confirmPublish()
 			}
 		});
 
@@ -67,7 +67,9 @@ export default class TelegraphPublishPlugin extends Plugin {
 				}
 			});
 
-			// this.debugModal = new PublishModal(this.app, imageFile as TFile)
+			// this.debugModal = new PublishModal(this.app, this, 'confirm', {
+			// 	fileTitle: 'test'
+			// })
 			// this.debugModal.open()
 		}
 	}
@@ -83,12 +85,21 @@ export default class TelegraphPublishPlugin extends Plugin {
 		console.log('get page', page)
 	}
 
-	async publishActiveFile() {
+	async confirmPublish() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
-			// TODO error modal
+			new PublishModal(this.app, this, 'error', {
+				fileTitle: view.file.basename,
+			}).open()
 			return
 		}
+		new PublishModal(this.app, this, 'confirm', {
+			fileTitle: view.file.basename,
+		}).open()
+	}
+
+	async publishActiveFile() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 
 		// change to preview mode
 		await view.leaf.setViewState({
@@ -111,26 +122,36 @@ export default class TelegraphPublishPlugin extends Plugin {
 		$contentContainer.find('.frontmatter-container').remove()
 		const nodes = elementToContentNodes($contentContainer[0])
 		console.log('nodes', nodes)
+		// return
 
 		// get file content and frontmatter
 		let content = await this.app.vault.read(view.file)
 		const { data } = matter(content)
 		let page
+		let action = 'create'
 		if (FRONTMATTER_KEY.telegraph_page_path in data) {
-			console.log('update telegraph page')
+			action = 'update'
+			// console.log('update telegraph page')
 			// already published
 			page = await this.getClient().editPage({
 				path: data[FRONTMATTER_KEY.telegraph_page_path],
 				title: view.file.basename,
+				// title: '',
 				content: nodes,
+			}).catch(e => {
+				new PublishModal(this.app, this, 'error', {error: e}).open()
+				throw e
 			})
 		} else {
-			console.log('create telegraph page')
+			// console.log('create telegraph page')
 			// not published yet
 			page = await this.getClient().createPage({
 				title: view.file.basename,
 				author_name: this.settings.username,
 				content: nodes,
+			}).catch(e => {
+				new PublishModal(this.app, this, 'error', {error: e}).open()
+				throw e
 			})
 
 			// update frontmatter
@@ -139,7 +160,13 @@ export default class TelegraphPublishPlugin extends Plugin {
 			await this.app.vault.modify(view.file, content)
 		}
 
+		// show modal
 		console.log('page', page.url, page)
+		new PublishModal(this.app, this, 'success', {
+			fileTitle: view.file.basename,
+			pageUrl: page.url,
+			action,
+		}).open()
 	}
 
 	onunload() {
@@ -159,25 +186,65 @@ export default class TelegraphPublishPlugin extends Plugin {
 	}
 }
 
-const modalContent = `<div class="image"><img></div>
-<div class="inputs">
-	<input type="text" placeholder="title" class="title">
-	<input type="button" value="save" class="save">
-</div>`
-
 class PublishModal extends Modal {
+	plugin: TelegraphPublishPlugin
+	name: string
+	data: any
 
-	constructor(app: App) {
+	constructor(app: App, plugin: TelegraphPublishPlugin, name: string, data: any) {
 		super(app);
+		this.plugin = plugin
+		this.name = name
+		this.data = data
 	}
 
 	onOpen() {
-		this.containerEl.addClass('image-rename-modal')
-		const { contentEl } = this;
+		this.containerEl.addClass('telegraph-publish-modal')
 
-		const content = $(modalContent)
-		content.find('.image img').attr('src', '')
-		$(contentEl).append(content)
+		switch (this.name) {
+			case 'confirm':
+				this.renderConfirm()
+				break
+			case 'success':
+				this.renderSuccess()
+				break
+			case 'error':
+				this.renderError()
+				break
+		}
+	}
+
+	renderConfirm() {
+		const { contentEl, titleEl } = this
+		titleEl.innerText = 'Confirm publish to Telegraph'
+		$(`<div class=".message">
+			<p>Are you sure you want to publish ${this.data.fileTitle} to Telegraph?</p>
+		</div>`).appendTo(contentEl)
+		const inputs = $('<div class=".inputs">').appendTo(contentEl)
+		inputs.append($('<button>').text('Yes').on('click', () => {
+			this.close()
+			this.plugin.publishActiveFile()
+		}))
+		inputs.append($('<button>').text('No').on('click', () => this.close()))
+	}
+
+	renderSuccess() {
+		const { contentEl, titleEl } = this
+		titleEl.innerText = 'Publish success'
+		$(`<div class=".message">
+			<p>Your article has been published (${this.data.action}) to Telegraph.</p>
+			<p><a href="${this.data.pageUrl}" target="_blank">${this.data.fileTitle}</a></p>
+			<p>To edit the article, please open settings and open <code>auth_url</code> to login to Telegraph first</p>
+		</div>`).appendTo(contentEl)
+	}
+
+	renderError() {
+		const { contentEl, titleEl } = this
+		titleEl.innerText = 'Publish failed'
+		$(`<div class=".message">
+			<p>Failed to publish ${this.data.fileTitle}, error:</p>
+			<pre><code>${this.data.error}</pre></code>
+		</div>`).appendTo(contentEl)
 	}
 
 	onClose() {
