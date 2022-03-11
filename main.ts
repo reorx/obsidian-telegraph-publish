@@ -200,8 +200,6 @@ class PublishModal extends Modal {
 	}
 
 	onOpen() {
-		this.containerEl.addClass('telegraph-publish-modal')
-
 		switch (this.name) {
 			case 'confirm':
 				this.renderConfirm()
