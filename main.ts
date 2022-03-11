@@ -1,6 +1,7 @@
-/* TODOs:
- * - check name existence when saving
- * - add context menu for renaming the link/file
+/* TODO
+ * - [ ] delete page (by submiting a "Deleted at" in content)
+ * - [ ] upload images
+ * - [ ] handle internal links
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
