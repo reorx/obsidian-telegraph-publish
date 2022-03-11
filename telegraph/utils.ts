@@ -52,14 +52,17 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 
 export const elementToContentNodes = (el: HTMLElement | Text, parentOriginTag: string | null = null): Array<ContentNode> => {
 	if (el instanceof Text) {
-		// console.log('text', el)
+		const text = el.data.trim()
+		if (text.length === 0) {
+			return []
+		}
 		if (parentOriginTag === 'h4' || parentOriginTag === 'h5') {
 			return [{
 				tag: 'strong',
-				children: [el.data as ContentNode],
+				children: [text],
 			}]
 		}
-		return [el.data as ContentNode]
+		return [text]
 	}
 	// drop non HTMLElement node
 	if (!(el instanceof HTMLElement)) {
@@ -69,8 +72,16 @@ export const elementToContentNodes = (el: HTMLElement | Text, parentOriginTag: s
 
 	const [nodeElement, originTag] = elementToNodeElement(el)
 	if (nodeElement) {
-		console.log('node', el, nodeElement)
+		// handle special tags
+		// because telegraph does not support nested list, we have to get all content of <li> as a single string
+		switch (nodeElement.tag) {
+			case 'li':
+				nodeElement.children = [el.innerText.trim()]
+				return [nodeElement]
+		}
+
 		// add children
+		// console.log('node', el, nodeElement)
 		const children = []
 		for (let childEl of el.childNodes) {
 			children.push(...elementToContentNodes(childEl as HTMLElement | Text, originTag))
@@ -94,11 +105,12 @@ export const elementToContentNodes = (el: HTMLElement | Text, parentOriginTag: s
 		}
 		// console.log(el.tagName, 'childNodes', el.childNodes)
 		// console.log(el.tagName, 'children', children)
-		nodeElement.children = children
+		if (children.length > 0)
+			nodeElement.children = children
 		return [nodeElement]
 	} else {
-		console.log('unwrap', el)
 		// unwrap the current element
+		// console.log('unwrap', el)
 		const nodes = []
 		for (let childEl of el.childNodes) {
 			nodes.push(...elementToContentNodes(childEl as HTMLElement | Text))

@@ -4,14 +4,21 @@
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
-	TFile, MarkdownView,
+	MarkdownView,
 	Modal,
+	WorkspaceLeaf,
 } from 'obsidian';
 import $ from 'cash-dom';
 import { Cash } from 'cash-dom';
 import TelegraphClient from './telegraph';
 import { elementToContentNodes } from './telegraph/utils'
+import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter';
+import matter from 'gray-matter'
 
+const FRONTMATTER_KEY = {
+	telegraph_page_url: 'telegraph_page_url',
+	telegraph_page_path: 'telegraph_page_path',
+}
 
 interface PluginSettings {
 	accessToken: string
@@ -51,10 +58,29 @@ export default class TelegraphPublishPlugin extends Plugin {
 		});
 
 		// debug code
-		// if (DEBUG) {
-		// 	this.debugModal = new PublishModal(this.app, imageFile as TFile)
-		// 	this.debugModal.open()
-		// }
+		if (DEBUG) {
+			this.addCommand({
+				id: 'get-telegraph-page',
+				name: "Get telegraph page",
+				callback: async () => {
+					await this.getActiveFilePage()
+				}
+			});
+
+			// this.debugModal = new PublishModal(this.app, imageFile as TFile)
+			// this.debugModal.open()
+		}
+	}
+
+	async getActiveFilePage() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+		let content = await this.app.vault.read(view.file)
+		const { data } = matter(content)
+		const pagePath = data[FRONTMATTER_KEY.telegraph_page_path]
+		if (!pagePath)
+			return
+		const page = await this.getClient().getPage(pagePath)
+		console.log('get page', page)
 	}
 
 	async publishActiveFile() {
@@ -64,19 +90,55 @@ export default class TelegraphPublishPlugin extends Plugin {
 			return
 		}
 
-		// .markdown-reading-view
+		// change to preview mode
+		await view.leaf.setViewState({
+			...view.leaf.getViewState(),
+			state: {
+				...view.getState(),
+				mode: 'preview',
+			},
+		})
+		// waiht for html to update
+		await new Promise(resolve => setTimeout(resolve, 500));
+
+		// Convert html to telegraph nodes
+		// div.markdown-reading-view
 		const containerEl = view.previewMode.containerEl
 		const contentContainerEl = containerEl.children[0].children[1]
-		console.log('contentContainerEl', contentContainerEl)
-
-		const nodes = elementToContentNodes(contentContainerEl as HTMLElement)
+		// clone and preprocess
+		const $contentContainer = $(contentContainerEl).clone()
+		$contentContainer.find('.frontmatter').remove()
+		$contentContainer.find('.frontmatter-container').remove()
+		const nodes = elementToContentNodes($contentContainer[0])
 		console.log('nodes', nodes)
-		return
-		const page = await this.getClient().createPage({
-			title: view.file.basename,
-			author_name: this.settings.username,
-			content:nodes,
-		})
+
+		// get file content and frontmatter
+		let content = await this.app.vault.read(view.file)
+		const { data } = matter(content)
+		let page
+		if (FRONTMATTER_KEY.telegraph_page_path in data) {
+			console.log('update telegraph page')
+			// already published
+			page = await this.getClient().editPage({
+				path: data[FRONTMATTER_KEY.telegraph_page_path],
+				title: view.file.basename,
+				content: nodes,
+			})
+		} else {
+			console.log('create telegraph page')
+			// not published yet
+			page = await this.getClient().createPage({
+				title: view.file.basename,
+				author_name: this.settings.username,
+				content: nodes,
+			})
+
+			// update frontmatter
+			content = updateKeyInFrontMatter(content, FRONTMATTER_KEY.telegraph_page_url, page.url)
+			content = updateKeyInFrontMatter(content, FRONTMATTER_KEY.telegraph_page_path, page.path)
+			await this.app.vault.modify(view.file, content)
+		}
+
 		console.log('page', page.url, page)
 	}
 

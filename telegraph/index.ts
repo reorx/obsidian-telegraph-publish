@@ -69,4 +69,12 @@ export default class TelegraphClient {
     const data = await this.request('POST', `editPage`, reqData)
     return data as Page
   }
+
+  async getPage(path: string): Promise<Page> {
+    const data = await this.request('POST', `getPage`, {
+		path,
+		return_content: true,
+	})
+    return data as Page
+  }
 }
