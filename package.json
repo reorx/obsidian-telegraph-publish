@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-paste-image-rename",
+	"name": "obsidian-telegraph-publish",
 	"version": "1.0.0",
 	"main": "main.js",
 	"scripts": {
@@ -12,6 +12,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
+		"@types/superagent": "^4.1.15",
 		"@typescript-eslint/eslint-plugin": "^5.2.0",
 		"@typescript-eslint/parser": "^5.2.0",
 		"builtin-modules": "^3.2.0",

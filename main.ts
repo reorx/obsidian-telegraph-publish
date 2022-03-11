@@ -4,70 +4,41 @@
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
-	TFile, TAbstractFile,
 	Modal,
 } from 'obsidian';
 import $ from 'cash-dom';
+import { Cash } from 'cash-dom';
+import TelegraphClient from './telegraph';
 
 
 interface PluginSettings {
-	// ${imageNameKey}-${input}${numberSuffix('-')}
-	// if no ${number} in newNamePattern, the number will be automatically added.
-	newNamePattern: string
-	// if no ${input} in newNamePattern, the file will be automatically renamed.
-	autoRenameIfNoInputRequired: boolean
+	accessToken: string
+	username: string
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
-	newNamePattern: '${imageNameKey}${numberSuffix("-")}',
-	autoRenameIfNoInputRequired: false,
+	accessToken: '',
+	username: 'obsidian'
 }
 
 const DEBUG = true
 
-const PASTED_IMAGE_PREFIX = 'Pasted image '
-
-
-export default class PasteImageRenamePlugin extends Plugin {
+export default class TelegraphPublishPlugin extends Plugin {
 	settings: PluginSettings
-	debugModal: ImageRenameModal|null
+	debugModal: PublishModal|null
 
 	async onload() {
 		await this.loadSettings();
-		console.log('paste image rename plugin loaded')
-
-		this.registerEvent(
-			this.app.vault.on('create', (file) => {
-				if (!(file instanceof TFile))
-					return
-				if (!isPastedImage(file))
-					return
-				const timeGapMs = (new Date().getTime()) - file.stat.ctime
-				// if the pasted image is created more than 1 second ago, ignore it
-				if (timeGapMs > 1000)
-					return
-				console.log('file created', file)
-				new ImageRenameModal(this.app, file as TFile).open();
-			})
-		)
+		console.log('telegraph publish plugin loaded')
 
 		// add settings tab
 		this.addSettingTab(new SettingTab(this.app, this));
 
 		// debug code
-		if (DEBUG) {
-			var imageFile: TFile
-			for (const file of this.app.vault.getFiles()) {
-				if (isPastedImage(file)) {
-					imageFile = file
-					break
-				}
-			}
-			if (imageFile) {
-				this.debugModal = new ImageRenameModal(this.app, imageFile as TFile)
-				this.debugModal.open()
-			}
-		}
+		// if (DEBUG) {
+		// 	this.debugModal = new PublishModal(this.app, imageFile as TFile)
+		// 	this.debugModal.open()
+		// }
 	}
 
 	onunload() {
@@ -81,31 +52,22 @@ export default class PasteImageRenamePlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-function isPastedImage(file: TAbstractFile): boolean {
-	if (file instanceof TFile) {
-		if (file.name.startsWith(PASTED_IMAGE_PREFIX)) {
-			return true
-		}
+	getClient(): TelegraphClient {
+		return new TelegraphClient(this.settings.accessToken)
 	}
-	return false
 }
 
-const modalContent = `
-<div class="image"><img></div>
+const modalContent = `<div class="image"><img></div>
 <div class="inputs">
 	<input type="text" placeholder="title" class="title">
 	<input type="button" value="save" class="save">
-</div>
-`
+</div>`
 
-class ImageRenameModal extends Modal {
-	src: TFile
+class PublishModal extends Modal {
 
-	constructor(app: App, src: TFile) {
+	constructor(app: App) {
 		super(app);
-		this.src = src
 	}
 
 	onOpen() {
@@ -113,7 +75,7 @@ class ImageRenameModal extends Modal {
 		const { contentEl } = this;
 
 		const content = $(modalContent)
-		content.find('.image img').attr('src', this.app.vault.getResourcePath(this.src))
+		content.find('.image img').attr('src', '')
 		$(contentEl).append(content)
 	}
 
@@ -123,50 +85,103 @@ class ImageRenameModal extends Modal {
 	}
 }
 
-const newNamePatternDesc = `
-A pattern indicating how the new name should be generated.
-
-Available variables:
-- \${imageNameKey}: this variable is read from the markdown file's frontmatter, if not present, an empty string will be used.
-- \${numberSuffix(DELIMITER)}: pass DELIMITER to this function to generate the number suffix for duplicated names. e.g. \${numberSuffix("-")} will generate "-1", "-2", "-3", etc.
-- \${numberPrefix(DELIMITER)}: pass DELIMITER to this function to generate the number prefix for duplicated names. e.g. \${numberPrefix("_")} will generate "1_", "2_", "3_", etc.
-- \${input}: custom input, cursor will be put here for you to type in.
-if no \${number} in newNamePattern, the number will be automatically added.
-`
+const accountInfoHTML = `<div id="telegraph-account-info">
+	<div class="title">Account Info:</div>
+</div>`
 
 class SettingTab extends PluginSettingTab {
-	plugin: PasteImageRenamePlugin;
+	plugin: TelegraphPublishPlugin;
+	accountInfoEl: Cash
+	errorEl: Cash
 
-	constructor(app: App, plugin: PasteImageRenamePlugin) {
+	constructor(app: App, plugin: TelegraphPublishPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
+	async renderAccountInfo() {
+		const el = this.accountInfoEl
+		const client = this.plugin.getClient()
+		if (client.accessToken) {
+			let account
+			try {
+				account = await client.getAccountInfo() as any
+			} catch(e) {
+				this.renderError(e)
+				throw e
+			}
+			console.log('get account', account)
+			const ul = $(`<ul>
+				<li><code>short_name</code>: ${account.short_name}</li>
+				<li><code>auth_url</code>: <a href="${account.auth_url}">${account.auth_url}</a></li>
+			</ul>`)
+			el.append(ul)
+		} else {
+			el.append($(`<div>No access token</div>`))
+		}
+	}
+
+	renderError(err: Error) {
+		this.errorEl.text(err.message)
+	}
+
 	display(): void {
 		const { containerEl } = this;
+		const plugin = this.plugin
 		containerEl.empty();
 
+		containerEl.createEl('h2', {text: 'Account'});
+
 		new Setting(containerEl)
-			.setName('New name pattern')
-			.setDesc(newNamePatternDesc)
+			.setName('Username')
+			.setDesc(`The username for creating telegraph account`)
 			.addText(text => text
-				.setPlaceholder('${imageNameKey}-${input}')
-				.setValue(this.plugin.settings.newNamePattern)
+				.setValue(this.plugin.settings.username)
 				.onChange(async (value) => {
-					this.plugin.settings.newNamePattern = value;
-					await this.plugin.saveSettings();
+					plugin.settings.username = value;
+					await plugin.saveSettings();
 				}
 			));
 
 		new Setting(containerEl)
-			.setName('Auto rename if no input required')
-			.setDesc(`if no \${input} in newNamePattern, the file will be automatically renamed.`)
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.autoRenameIfNoInputRequired)
+			.setName('Access token')
+			.setDesc(`Telegraph access token. You can also leave it empty and click "Create new account"`)
+			.addText(text => text
+				.setValue(this.plugin.settings.accessToken)
 				.onChange(async (value) => {
-					this.plugin.settings.autoRenameIfNoInputRequired = value;
-					await this.plugin.saveSettings();
+					plugin.settings.accessToken = value;
+					await plugin.saveSettings();
+					this.renderAccountInfo()
 				}
-			));
+			))
+
+		new Setting(containerEl)
+			.setName('Create new account')
+			.addButton(button => {
+				button
+					.setButtonText('Create new account')
+					.onClick(async () => {
+						let account
+						try {
+							account = await plugin.getClient().createAccount(plugin.settings.username, plugin.settings.username)
+						} catch(e) {
+							this.renderError(e)
+							throw e
+						}
+						console.log('account created', account)
+
+						plugin.settings.accessToken = account.access_token
+						plugin.saveSettings()
+						// TODO change access token input?
+
+						this.renderAccountInfo()
+					})
+				button.buttonEl.setAttribute('style', `margin-right: 0`)
+				return button
+			})
+
+		this.accountInfoEl = $(accountInfoHTML).appendTo(containerEl)
+		this.errorEl = $(`<div class="error"></div>`).appendTo(containerEl)
+		this.renderAccountInfo()
 	}
 }
