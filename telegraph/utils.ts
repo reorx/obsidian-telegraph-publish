@@ -34,9 +34,6 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 			break
 	}
 
-	// classname
-	// TODO 'internal-link'
-
 	// only return new node whose tag is in availableTags
 	if (availableTags.indexOf(nodeElement.tag) === -1) {
 		return [null, tag]
@@ -121,6 +118,12 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 			// ignore <br> in li, it will cause new list item to be created
 			if (parentTag === 'li')
 				return []
+		case 'a':
+			// handle internal links
+			if (el.hasClass('internal-link')) {
+				nodeElement.attrs.href = '#'
+			}
+			break
 	}
 
 	// add children

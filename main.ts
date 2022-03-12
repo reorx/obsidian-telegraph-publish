@@ -1,8 +1,8 @@
 /* TODO
- * - [ ] delete page (by submiting a "Deleted at" in content)
+ * - [x] delete page (by submiting a "Deleted at" in content)
  * - [ ] upload images
- * - [ ] handle internal links
- * - [ ] handle code blocks
+ * - [x] handle internal links
+ * - [x] handle code blocks
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
