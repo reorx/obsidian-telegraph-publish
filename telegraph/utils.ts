@@ -4,6 +4,8 @@ const availableAttrs = ['href', 'src']
 // From https://telegra.ph/api#NodeElement:
 const availableTags = [
 	'a', 'aside', 'b', 'blockquote', 'br', 'code', 'em', 'figcaption', 'figure', 'h3', 'h4', 'hr', 'i', 'iframe', 'img', 'li', 'ol', 'p', 'pre', 's', 'strong', 'u', 'ul', 'video',
+	// additional tags
+	'table',
 ]
 const availableInlineTags = [
 	'a', 'aside', 'b', 'blockquote', 'br', 'code', 'em',
@@ -54,6 +56,10 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 	return [nodeElement, tag]
 }
 
+function trimLineBreak(s: string): string {
+	return s.replace(/^\n+|\n+$/g, '')
+}
+
 export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boolean|null = null, parentTag: string | null = null): Array<ContentNode> {
 	if (el instanceof Text) {
 		const text = el.data
@@ -66,13 +72,18 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 				children: [text],
 			}]
 		}
-		return [text]
+		return [trimLineBreak(text)]
 	}
 	// drop non HTMLElement node
 	if (!(el instanceof HTMLElement)) {
 		// console.log('not instance of HTMLElement', el)
 		return []
 	}
+	// drop special classes
+	if (el.hasClass('frontmatter'))
+		return []
+	if (el.hasClass('frontmatter-container'))
+		return []
 
 	const [nodeElement, tag] = elementToNodeElement(el)
 	let shouldUnwrap = !nodeElement
@@ -87,7 +98,7 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 		// console.log('unwrap', el)
 		const nodes = []
 		for (let childEl of el.childNodes) {
-			nodes.push(...elementToContentNodes(childEl as HTMLElement | Text, unwrapBlock))
+			nodes.push(...elementToContentNodes(childEl as HTMLElement | Text, unwrapBlock, parentTag))
 		}
 		return nodes
 	}
@@ -98,6 +109,18 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 			// because telegraph does not support nested list, all block elements in <li> should be unwrapped
 			unwrapBlock = true
 			break
+		case 'pre':
+			nodeElement.children = [(el.children[0] as HTMLElement).innerText.trim()]
+			return [nodeElement]
+		case 'table':
+			nodeElement.tag = 'pre'
+			console.log('table content', el, el.innerText, [el.innerText])
+			nodeElement.children = [el.outerText.trim()]
+			return [nodeElement]
+		case 'br':
+			// ignore <br> in li, it will cause new list item to be created
+			if (parentTag === 'li')
+				return []
 	}
 
 	// add children
@@ -105,34 +128,34 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 	const children: Array<ContentNode> = []
 	for (let childEl of el.childNodes) {
 		children.push(...elementToContentNodes(childEl as HTMLElement | Text, unwrapBlock, tag))
+	}
 
-		// handle special tags for children
-		switch (tag) {
-			case 'h4':
-			case 'h5':
-			case 'h6':
-				for (let i = 0; i < children.length; i++) {
-					const child = children[i]
-					if (isString(child)) {
-						nodeElement.children[i] = {
-							tag: 'strong',
-							children: [child],
-						}
+	// handle special tags for children
+	switch (tag) {
+		case 'h4':
+		case 'h5':
+		case 'h6':
+			for (let i = 0; i < children.length; i++) {
+				const child = children[i]
+				if (isString(child)) {
+					nodeElement.children[i] = {
+						tag: 'strong',
+						children: [child],
 					}
 				}
-				break
-			case 'li':
-				// add LF for continuous text child
-				for (let i = 0; i < children.length; i++) {
-					const child = children[i]
-					let next: ContentNode
-					if (i + 1 < children.length)
-					 	next = children[i + 1]
-					if (isString(child) && next && isString(next) && child[child.length - 1] !== '\n') {
-						children[i] = child + '\n'
-					}
+			}
+			break
+		case 'li':
+			// add LF for continuous text child
+			for (let i = 0; i < children.length; i++) {
+				const child = children[i]
+				let next: ContentNode
+				if (i + 1 < children.length)
+					next = children[i + 1]
+				if (isString(child) && next && isString(next) && child[child.length - 1] !== '\n') {
+					children[i] = child + '\n'
 				}
-		}
+			}
 	}
 	// console.log(el.tagName, 'childNodes', el.childNodes)
 	// console.log(el.tagName, 'children', children)

@@ -64,6 +64,14 @@ export default class TelegraphPublishPlugin extends Plugin {
 				await this.confirmPublish()
 			}
 		});
+		// add command
+		this.addCommand({
+			id: 'clear-published-content-on-telegraph',
+			name: "Clear published content on Telegraph",
+			callback: async () => {
+				await this.confirmClearPublished()
+			}
+		});
 
 		// debug code
 		if (DEBUG) {
@@ -142,11 +150,15 @@ export default class TelegraphPublishPlugin extends Plugin {
 		// div.markdown-reading-view
 		const containerEl = view.previewMode.containerEl
 		const contentContainerEl = containerEl.children[0].children[1]
-		// clone and preprocess
+
+		/*
+		// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
 		const $contentContainer = $(contentContainerEl).clone()
 		$contentContainer.find('.frontmatter').remove()
 		$contentContainer.find('.frontmatter-container').remove()
 		const nodes = elementToContentNodes($contentContainer[0])
+		*/
+		const nodes = elementToContentNodes(contentContainerEl as HTMLElement)
 		console.log('nodes', nodes)
 		// return
 
@@ -245,12 +257,12 @@ class PublishModal extends Modal {
 			case Action.create:
 			case Action.update:
 				$(`<div class=".message">
-					<p>Are you sure you want to publish <code>${fileTitle}</code> to Telegraph?</p>
+					<p>Are you sure you want to publish <b>${fileTitle}</b> to Telegraph?</p>
 				</div>`).appendTo(contentEl)
 				break
 			case Action.clear:
 				$(`<div class=".message">
-					<p>Are you sure you want to clear published content of <code>${fileTitle}</code> in Telegraph?</p>
+					<p>Are you sure you want to clear published content of <b>${fileTitle}</b> on Telegraph?</p>
 					<p>Note that Telegraph does not provide a delete API, the clear action just replaces the content with "Deleted" to achieve a similar result.</p>
 				</div>`).appendTo(contentEl)
 				break
@@ -290,7 +302,7 @@ class PublishModal extends Modal {
 		const { contentEl, titleEl } = this
 		titleEl.innerText = `Publish failed - ${action}`
 		$(`<div class=".message">
-			<p>Failed to publish <code>${fileTitle}</code>, error:</p>
+			<p>Failed to publish <b>${fileTitle}</b>, error:</p>
 			<pre><code>${error}</pre></code>
 		</div>`).appendTo(contentEl)
 		return this
