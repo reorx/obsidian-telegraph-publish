@@ -8,7 +8,6 @@ import {
 	App, Plugin, PluginSettingTab, Setting,
 	MarkdownView,
 	Modal,
-	WorkspaceLeaf,
 } from 'obsidian';
 import $ from 'cash-dom';
 import { Cash } from 'cash-dom';
@@ -32,12 +31,19 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	username: 'obsidian'
 }
 
-const DEBUG = true
-
 enum Action {
 	create = 'create',
 	update = 'update',
 	clear = 'clear',
+}
+
+// const DEBUG = true
+const DEBUG = false
+
+function debugLog(...args: any[]) {
+	if (DEBUG) {
+		console.log(...args)
+	}
 }
 
 export default class TelegraphPublishPlugin extends Plugin {
@@ -98,7 +104,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		if (!pagePath)
 			return
 		const page = await this.getClient().getPage(pagePath)
-		console.log('get page', page)
+		debugLog('get page', page)
 	}
 
 	async getActiveFileContent(view: MarkdownView): Promise<[string|null, string|null]> {
@@ -171,7 +177,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		const nodes = elementToContentNodes($contentContainer[0])
 		*/
 		const nodes = elementToContentNodes(contentContainerEl as HTMLElement)
-		console.log('nodes', nodes)
+		debugLog('nodes', nodes)
 		// return
 
 		// get file content and frontmatter
@@ -179,7 +185,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		let page, action: Action
 		if (pagePath) {
 			action = Action.update
-			// console.log('update telegraph page')
+			// debugLog('update telegraph page')
 			// already published
 			page = await this.getClient().editPage({
 				path: pagePath,
@@ -192,7 +198,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			})
 		} else {
 			action = Action.create
-			// console.log('create telegraph page')
+			// debugLog('create telegraph page')
 			// not published yet
 			page = await this.getClient().createPage({
 				title: file.basename,
@@ -210,7 +216,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		}
 
 		// show modal
-		console.log('page', page.url, page)
+		debugLog('page', page.url, page)
 		new PublishModal(this).success(action, file.basename, page.url).open()
 	}
 
@@ -231,7 +237,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		})
 
 		// show modal
-		console.log('page', page.url, page)
+		debugLog('page', page.url, page)
 		new PublishModal(this).success(Action.clear, file.basename, page.url).open()
 	}
 
@@ -360,7 +366,7 @@ class SettingTab extends PluginSettingTab {
 				this.renderError(e)
 				throw e
 			}
-			console.log('get account', account)
+			debugLog('get account', account)
 			const ul = $(`<ul>
 				<li><code>short_name</code>: ${account.short_name}</li>
 				<li><code>auth_url</code>: <a href="${account.auth_url}">${account.auth_url}</a></li>
@@ -419,7 +425,7 @@ class SettingTab extends PluginSettingTab {
 							this.renderError(e)
 							throw e
 						}
-						console.log('account created', account)
+						debugLog('account created', account)
 						plugin.settings.accessToken = account.access_token
 						await plugin.saveSettings()
 						this.display()

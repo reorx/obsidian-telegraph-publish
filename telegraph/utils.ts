@@ -111,7 +111,6 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 			return [nodeElement]
 		case 'table':
 			nodeElement.tag = 'pre'
-			console.log('table content', el, el.innerText, [el.innerText])
 			nodeElement.children = [el.outerText.trim()]
 			return [nodeElement]
 		case 'br':
