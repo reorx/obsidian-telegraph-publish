@@ -54,7 +54,7 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 	return [nodeElement, tag]
 }
 
-export const elementToContentNodes = (el: HTMLElement | Text, unwrapBlock: boolean|null = null, parentTag: string | null = null): Array<ContentNode> => {
+export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boolean|null = null, parentTag: string | null = null): Array<ContentNode> {
 	if (el instanceof Text) {
 		const text = el.data
 		if (text.trim().length === 0) {

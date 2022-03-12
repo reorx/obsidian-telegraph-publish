@@ -2,6 +2,7 @@
  * - [ ] delete page (by submiting a "Deleted at" in content)
  * - [ ] upload images
  * - [ ] handle internal links
+ * - [ ] handle code blocks
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
@@ -32,6 +33,12 @@ const DEFAULT_SETTINGS: PluginSettings = {
 }
 
 const DEBUG = true
+
+enum Action {
+	create = 'create',
+	update = 'update',
+	clear = 'clear',
+}
 
 export default class TelegraphPublishPlugin extends Plugin {
 	settings: PluginSettings
@@ -86,21 +93,39 @@ export default class TelegraphPublishPlugin extends Plugin {
 		console.log('get page', page)
 	}
 
+	async getActiveFileContent(view: MarkdownView): Promise<[string|null, string|null]> {
+		let content = await this.app.vault.read(view.file)
+		const { data } = matter(content)
+		return [content, data[FRONTMATTER_KEY.telegraph_page_path]]
+	}
+
 	async confirmPublish() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
-			new PublishModal(this.app, this, 'error', {
-				fileTitle: view.file.basename,
-			}).open()
+			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
 			return
 		}
-		new PublishModal(this.app, this, 'confirm', {
-			fileTitle: view.file.basename,
-		}).open()
+		const [, pagePath] = await this.getActiveFileContent(view)
+		new PublishModal(this).confirm(pagePath ? Action.update : Action.create, view.file.basename, this.publishActiveFile.bind(this)).open()
+	}
+
+	async confirmClearPublished() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+		if (!view) {
+			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
+			return
+		}
+		const [, pagePath] = await this.getActiveFileContent(view)
+		if (!pagePath) {
+			new PublishModal(this).invalidOperation(`This file has not been published yet`).open()
+			return
+		}
+		new PublishModal(this).confirm(Action.clear, view.file.basename, this.clearPublished.bind(this)).open()
 	}
 
 	async publishActiveFile() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+		const file = view.file
 
 		// change to preview mode
 		await view.leaf.setViewState({
@@ -126,48 +151,64 @@ export default class TelegraphPublishPlugin extends Plugin {
 		// return
 
 		// get file content and frontmatter
-		let content = await this.app.vault.read(view.file)
-		const { data } = matter(content)
-		let page
-		let action = 'create'
-		if (FRONTMATTER_KEY.telegraph_page_path in data) {
-			action = 'update'
+		const [content, pagePath] = await this.getActiveFileContent(view)
+		let page, action: Action
+		if (pagePath) {
+			action = Action.update
 			// console.log('update telegraph page')
 			// already published
 			page = await this.getClient().editPage({
-				path: data[FRONTMATTER_KEY.telegraph_page_path],
-				title: view.file.basename,
+				path: pagePath,
+				title: file.basename,
 				// title: '',
 				content: nodes,
 			}).catch(e => {
-				new PublishModal(this.app, this, 'error', {error: e}).open()
+				new PublishModal(this).error(action, e, file.basename).open()
 				throw e
 			})
 		} else {
+			action = Action.create
 			// console.log('create telegraph page')
 			// not published yet
 			page = await this.getClient().createPage({
-				title: view.file.basename,
+				title: file.basename,
 				author_name: this.settings.username,
 				content: nodes,
 			}).catch(e => {
-				new PublishModal(this.app, this, 'error', {error: e}).open()
+				new PublishModal(this).error(action, e, file.basename).open()
 				throw e
 			})
 
 			// update frontmatter
-			content = updateKeyInFrontMatter(content, FRONTMATTER_KEY.telegraph_page_url, page.url)
-			content = updateKeyInFrontMatter(content, FRONTMATTER_KEY.telegraph_page_path, page.path)
-			await this.app.vault.modify(view.file, content)
+			let newContent = updateKeyInFrontMatter(content, FRONTMATTER_KEY.telegraph_page_url, page.url)
+			newContent = updateKeyInFrontMatter(newContent, FRONTMATTER_KEY.telegraph_page_path, page.path)
+			await this.app.vault.modify(file, newContent)
 		}
 
 		// show modal
 		console.log('page', page.url, page)
-		new PublishModal(this.app, this, 'success', {
-			fileTitle: view.file.basename,
-			pageUrl: page.url,
-			action,
-		}).open()
+		new PublishModal(this).success(action, file.basename, page.url).open()
+	}
+
+	async clearPublished() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
+		const file = view.file
+
+		// get file content and frontmatter
+		const [, pagePath] = await this.getActiveFileContent(view)
+		const page = await this.getClient().editPage({
+			path: pagePath,
+			title: file.basename,
+			// title: '',
+			content: ["Deleted"],
+		}).catch(e => {
+			new PublishModal(this).error(Action.clear, e, file.basename).open()
+			throw e
+		})
+
+		// show modal
+		console.log('page', page.url, page)
+		new PublishModal(this).success(Action.clear, file.basename, page.url).open()
 	}
 
 	onunload() {
@@ -189,66 +230,83 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 class PublishModal extends Modal {
 	plugin: TelegraphPublishPlugin
-	name: string
+	action: Action
 	data: any
 
-	constructor(app: App, plugin: TelegraphPublishPlugin, name: string, data: any) {
-		super(app);
+	constructor(plugin: TelegraphPublishPlugin) {
+		super(plugin.app);
 		this.plugin = plugin
-		this.name = name
-		this.data = data
 	}
 
-	onOpen() {
-		switch (this.name) {
-			case 'confirm':
-				this.renderConfirm()
+	confirm(action: Action, fileTitle: string, func: () => {}): PublishModal {
+		const { contentEl, titleEl } = this
+		titleEl.innerText = `Confirm publish - ${action}`
+		switch (action) {
+			case Action.create:
+			case Action.update:
+				$(`<div class=".message">
+					<p>Are you sure you want to publish <code>${fileTitle}</code> to Telegraph?</p>
+				</div>`).appendTo(contentEl)
 				break
-			case 'success':
-				this.renderSuccess()
-				break
-			case 'error':
-				this.renderError()
+			case Action.clear:
+				$(`<div class=".message">
+					<p>Are you sure you want to clear published content of <code>${fileTitle}</code> in Telegraph?</p>
+					<p>Note that Telegraph does not provide a delete API, the clear action just replaces the content with "Deleted" to achieve a similar result.</p>
+				</div>`).appendTo(contentEl)
 				break
 		}
-	}
-
-	renderConfirm() {
-		const { contentEl, titleEl } = this
-		titleEl.innerText = 'Confirm publish to Telegraph'
-		$(`<div class=".message">
-			<p>Are you sure you want to publish ${this.data.fileTitle} to Telegraph?</p>
-		</div>`).appendTo(contentEl)
 		const inputs = $('<div class=".inputs">').appendTo(contentEl)
 		inputs.append($('<button>').text('Yes').on('click', () => {
 			this.close()
-			this.plugin.publishActiveFile()
+			func()
 		}))
 		inputs.append($('<button>').text('No').on('click', () => this.close()))
+		return this
 	}
 
-	renderSuccess() {
+	success(action: Action, fileTitle: string, pageUrl: string): PublishModal {
 		const { contentEl, titleEl } = this
-		titleEl.innerText = 'Publish success'
-		$(`<div class=".message">
-			<p>Your article has been published (${this.data.action}) to Telegraph.</p>
-			<p><a href="${this.data.pageUrl}" target="_blank">${this.data.fileTitle}</a></p>
-			<p>To edit the article, please open settings and open <code>auth_url</code> to login to Telegraph first</p>
-		</div>`).appendTo(contentEl)
+		titleEl.innerText = `Publish success - ${action}`
+		switch (action) {
+			case Action.create:
+			case Action.update:
+				$(`<div class=".message">
+					<p>Your article has been published (${action}) to Telegraph.</p>
+					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
+					<p>To edit the article, please open settings and open <code>auth_url</code> to login to Telegraph first</p>
+				</div>`).appendTo(contentEl)
+				break
+			case Action.clear:
+				$(`<div class=".message">
+					<p>Your published article has been cleared.</p>
+					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
+				</div>`).appendTo(contentEl)
+				break
+		}
+		return this
 	}
 
-	renderError() {
+	error(action: Action, error: Error, fileTitle: string): PublishModal {
 		const { contentEl, titleEl } = this
-		titleEl.innerText = 'Publish failed'
+		titleEl.innerText = `Publish failed - ${action}`
 		$(`<div class=".message">
-			<p>Failed to publish ${this.data.fileTitle}, error:</p>
-			<pre><code>${this.data.error}</pre></code>
+			<p>Failed to publish <code>${fileTitle}</code>, error:</p>
+			<pre><code>${error}</pre></code>
 		</div>`).appendTo(contentEl)
+		return this
+	}
+
+	invalidOperation(message: string): PublishModal {
+		const { contentEl, titleEl } = this
+		titleEl.innerText = `Invalid Operation`
+		$(`<div class=".message">
+			<p>${message}</p>
+		</div>`).appendTo(contentEl)
+		return this
 	}
 
 	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+		this.contentEl.empty();
 	}
 }
 
