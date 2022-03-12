@@ -107,7 +107,17 @@ export default class TelegraphPublishPlugin extends Plugin {
 		return [content, data[FRONTMATTER_KEY.telegraph_page_path]]
 	}
 
+	ensureAccessToken(): boolean {
+		if (!this.settings.accessToken) {
+			new PublishModal(this).invalidOperation(`Please set access token or create new account in settings`).open()
+			return false
+		}
+		return true
+	}
+
 	async confirmPublish() {
+		if (!this.ensureAccessToken())
+			return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
 			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
@@ -118,6 +128,8 @@ export default class TelegraphPublishPlugin extends Plugin {
 	}
 
 	async confirmClearPublished() {
+		if (!this.ensureAccessToken())
+			return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
 			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
@@ -310,7 +322,7 @@ class PublishModal extends Modal {
 
 	invalidOperation(message: string): PublishModal {
 		const { contentEl, titleEl } = this
-		titleEl.innerText = `Invalid Operation`
+		titleEl.innerText = `Invalid operation`
 		$(`<div class=".message">
 			<p>${message}</p>
 		</div>`).appendTo(contentEl)
@@ -322,7 +334,7 @@ class PublishModal extends Modal {
 	}
 }
 
-const accountInfoHTML = `<div id="telegraph-account-info">
+const accountInfoHTML = `<div class="account-info">
 	<div class="title">Account Info:</div>
 </div>`
 
@@ -338,6 +350,7 @@ class SettingTab extends PluginSettingTab {
 
 	async renderAccountInfo() {
 		const el = this.accountInfoEl
+		el.empty()
 		const client = this.plugin.getClient()
 		if (client.accessToken) {
 			let account
@@ -366,12 +379,12 @@ class SettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		const plugin = this.plugin
 		containerEl.empty();
-
-		containerEl.createEl('h2', {text: 'Account'});
+		containerEl.addClass('telegraph-publish-setting')
+		containerEl.createEl('h2', {text: 'Telegraph Account'});
 
 		new Setting(containerEl)
 			.setName('Username')
-			.setDesc(`The username for creating telegraph account`)
+			.setDesc(`The username for creating Telegraph account`)
 			.addText(text => text
 				.setValue(this.plugin.settings.username)
 				.onChange(async (value) => {
@@ -394,6 +407,7 @@ class SettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Create new account')
+			.setDesc(`When new account is created, access token will be replaced with the new one, please backup your old access token before creating new account`)
 			.addButton(button => {
 				button
 					.setButtonText('Create new account')
@@ -406,14 +420,10 @@ class SettingTab extends PluginSettingTab {
 							throw e
 						}
 						console.log('account created', account)
-
 						plugin.settings.accessToken = account.access_token
-						plugin.saveSettings()
-						// TODO change access token input?
-
-						this.renderAccountInfo()
+						await plugin.saveSettings()
+						this.display()
 					})
-				button.buttonEl.setAttribute('style', `margin-right: 0`)
 				return button
 			})
 

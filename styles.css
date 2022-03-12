@@ -1,0 +1,8 @@
+.telegraph-publish-setting button {
+	margin-right: 0;
+}
+.telegraph-publish-setting .account-info {
+	border: 1px solid #aaa;
+	border-radius: 3px;
+	padding: .5em 1em;
+}
