@@ -7,7 +7,7 @@
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
-	MarkdownView,
+	MarkdownView, MarkdownRenderer,
 	Modal,
 } from 'obsidian';
 import $ from 'cash-dom';
@@ -22,14 +22,21 @@ const FRONTMATTER_KEY = {
 	telegraph_page_path: 'telegraph_page_path',
 }
 
+enum HTMLSource {
+	Preview = 'Preview',
+	MarkdownRenderer = 'MarkdownRenderer',
+}
+
 interface PluginSettings {
 	accessToken: string
 	username: string
+	htmlSource: HTMLSource
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	accessToken: '',
-	username: 'obsidian'
+	username: 'obsidian',
+	htmlSource: HTMLSource.Preview,
 }
 
 enum Action {
@@ -149,7 +156,19 @@ export default class TelegraphPublishPlugin extends Plugin {
 		new PublishModal(this).confirm(Action.clear, view.file.basename, this.clearPublished.bind(this)).open()
 	}
 
-	async publishActiveFile() {
+	async publishActiveFileSafe() {
+		const cleanups: (() => void)[] = []
+		console.log('cleanups', cleanups)
+		try {
+			await this.publishActiveFile(cleanups)
+		} finally {
+			debugLog('run cleanups for publishActiveFile() call')
+			cleanups.forEach(func => func())
+		}
+	}
+
+	async publishActiveFile(cleanups: (() => void)[]) {
+		console.log('cleanups', cleanups)
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		const file = view.file
 
@@ -164,14 +183,31 @@ export default class TelegraphPublishPlugin extends Plugin {
 		// waiht for html to update
 		await new Promise(resolve => setTimeout(resolve, 500));
 
+		let contentEl: HTMLElement
 		// Convert html to telegraph nodes
-		// containerEl is div.markdown-reading-view
-		const containerEl = view.previewMode.containerEl
-		const contentEl = $(containerEl).find('.markdown-preview-section')[0]
-		if (contentEl === undefined) {
-			const err = new Error('Could not get element in preview, try to use "MarkdownRenderer" for "HTML source" in settings')
-			new PublishModal(this).error(null, err, file.basename).open()
-			throw err
+		if (this.settings.htmlSource === HTMLSource.Preview) {
+			// containerEl is div.markdown-reading-view
+			const containerEl = view.previewMode.containerEl
+			contentEl = $(containerEl).find('.markdown-preview-section')[0]
+			if (contentEl === undefined) {
+				const err = new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
+				new PublishModal(this).error(null, err, file.basename).open()
+				throw err
+			}
+		} else {
+			const markdown = await this.app.vault.cachedRead(file)
+			debugLog(`use ${HTMLSource.MarkdownRenderer}`)
+			contentEl = view.containerEl.createDiv({
+				cls: 'tmp-markdown-preview',
+				attr: {
+					style: 'display: none;'
+				}
+			})
+			cleanups.push(() => {
+				debugLog('cleanup: remove tmp-markdown-preview')
+				contentEl.remove()
+			})
+			await MarkdownRenderer.renderMarkdown(markdown, contentEl, "", null);
 		}
 
 		/*
@@ -181,7 +217,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		$contentContainer.find('.frontmatter-container').remove()
 		const nodes = elementToContentNodes($contentContainer[0])
 		*/
-		const nodes = elementToContentNodes(contentEl as HTMLElement)
+		const nodes = elementToContentNodes(contentEl)
 		debugLog('nodes', nodes)
 		// return
 
@@ -440,6 +476,25 @@ class SettingTab extends PluginSettingTab {
 
 		this.accountInfoEl = $(accountInfoHTML).appendTo(containerEl)
 		this.errorEl = $(`<div class="error"></div>`).appendTo(containerEl)
+
+		containerEl.createEl('h2', {text: 'Misc'});
+
+		new Setting(containerEl)
+			.setName('HTML Source')
+			.setDesc(`Choose how to get HTML for publishing.
+				Preview: directly get HTML in preview mode;
+				MarkdownRenderer: render HTML from markdown text,
+				this option will disable the effects other plugins made to preview mode.`)
+			.addDropdown(dropdown => dropdown
+				.addOption(HTMLSource.Preview, HTMLSource.Preview)
+				.addOption(HTMLSource.MarkdownRenderer, HTMLSource.MarkdownRenderer)
+				.setValue(this.plugin.settings.htmlSource)
+				.onChange(async (value: HTMLSource) => {
+					this.plugin.settings.htmlSource = value;
+					await this.plugin.saveSettings();
+				}
+			));
+
 		this.renderAccountInfo()
 	}
 }
