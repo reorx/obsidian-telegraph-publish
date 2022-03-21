@@ -158,7 +158,6 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 	async publishActiveFileSafe() {
 		const cleanups: (() => void)[] = []
-		console.log('cleanups', cleanups)
 		try {
 			await this.publishActiveFile(cleanups)
 		} finally {
@@ -168,7 +167,6 @@ export default class TelegraphPublishPlugin extends Plugin {
 	}
 
 	async publishActiveFile(cleanups: (() => void)[]) {
-		console.log('cleanups', cleanups)
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		const file = view.file
 
