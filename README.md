@@ -31,7 +31,7 @@ Telegraph has restricted support for HTML tags, therefor it's not practical to p
 |<code>\`\`\`code block</code>|✔|
 |`<table>`|Render as code block|
 
-## Usage
+## How to use
 
 ### Create a Telegraph account
 

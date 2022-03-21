@@ -3,6 +3,7 @@
  * - [ ] upload images
  * - [x] handle internal links
  * - [x] handle code blocks
+ * - [ ] copy url to clipboard button
  */
 import {
 	App, Plugin, PluginSettingTab, Setting,
@@ -165,18 +166,23 @@ export default class TelegraphPublishPlugin extends Plugin {
 		await new Promise(resolve => setTimeout(resolve, 500));
 
 		// Convert html to telegraph nodes
-		// div.markdown-reading-view
+		// containerEl is div.markdown-reading-view
 		const containerEl = view.previewMode.containerEl
-		const contentContainerEl = containerEl.children[0].children[1]
+		const contentEl = $(containerEl).find('.markdown-preview-section')[0]
+		if (contentEl === undefined) {
+			const err = new Error('Could not get element in preview, try to use "MarkdownRenderer" for "HTML source" in settings')
+			new PublishModal(this).error(null, err, file.basename).open()
+			throw err
+		}
 
 		/*
 		// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
-		const $contentContainer = $(contentContainerEl).clone()
+		const $contentContainer = $(contentEl).clone()
 		$contentContainer.find('.frontmatter').remove()
 		$contentContainer.find('.frontmatter-container').remove()
 		const nodes = elementToContentNodes($contentContainer[0])
 		*/
-		const nodes = elementToContentNodes(contentContainerEl as HTMLElement)
+		const nodes = elementToContentNodes(contentEl as HTMLElement)
 		debugLog('nodes', nodes)
 		// return
 
@@ -316,9 +322,9 @@ class PublishModal extends Modal {
 		return this
 	}
 
-	error(action: Action, error: Error, fileTitle: string): PublishModal {
+	error(action: Action|null, error: Error, fileTitle: string): PublishModal {
 		const { contentEl, titleEl } = this
-		titleEl.innerText = `Publish failed - ${action}`
+		titleEl.innerText = `Publish failed - ${action || 'unknown'}`
 		$(`<div class=".message">
 			<p>Failed to publish <b>${fileTitle}</b>, error:</p>
 			<pre><code>${error}</pre></code>
