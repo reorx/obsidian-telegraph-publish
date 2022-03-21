@@ -10,6 +10,12 @@ Features:
 Upcoming:
 - [ ] Support image uploading.
 
+## Installation
+
+Currently this plugin is in review, but you can take a try by either ways below:
+1. Manually download the [latest release](https://github.com/reorx/obsidian-telegraph-publish/releases) from GitHub and extract the files in `$YOUR_VAULT/.obsidian/plugins/obsidian-telegraph-publish`.
+2. Use [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat)
+
 ## Formatting support
 
 Telegraph has restricted support for HTML tags, therefor it's not practical to publish very complicated pages. You can see a [showcase](https://telegra.ph/2022031122-Test-telegraph-publish-02-03-12) of which the [sample note](./sample_note.md) is rendered.

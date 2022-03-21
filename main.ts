@@ -38,8 +38,7 @@ enum Action {
 	clear = 'clear',
 }
 
-// const DEBUG = true
-const DEBUG = false
+const DEBUG: boolean = !(process.env.BUILD_ENV === 'production')
 
 function debugLog(...args: any[]) {
 	if (DEBUG) {
@@ -53,7 +52,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		console.log('telegraph publish plugin loaded')
+		console.log('telegraph publish plugin loaded;', `DEBUG = ${DEBUG}`)
 
 		// add settings tab
 		this.addSettingTab(new SettingTab(this.app, this));

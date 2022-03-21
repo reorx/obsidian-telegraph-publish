@@ -11,7 +11,7 @@ if you want to view the source, please visit the github repository of this plugi
 */
 `;
 
-const prod = (process.argv[2] === 'production');
+const prod = process.env.BUILD_ENV === 'production';
 
 let runScriptPlugin = {
 	name: 'run-script',
@@ -37,6 +37,9 @@ let runScriptPlugin = {
 esbuild.build({
 	banner: {
 		js: banner,
+	},
+	define: {
+		'process.env.BUILD_ENV': JSON.stringify(process.env.BUILD_ENV),
 	},
 	entryPoints: ['main.ts', 'styles.css'],
 	bundle: true,
