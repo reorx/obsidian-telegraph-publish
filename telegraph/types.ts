@@ -16,7 +16,7 @@ export interface Page {
   author_name: string
   author_url: string
   image_url: string
-  content: Array<any>
+  content: ContentNode[]
   views: number
   can_edit: boolean
 }
@@ -30,7 +30,7 @@ export interface CreatePageData {
   title: string
   author_name?: string
   author_url?: string
-  content: Array<any>
+  content: ContentNode[]
   return_content?: boolean
 }
 
@@ -39,7 +39,7 @@ export interface EditPageData {
   title: string
   author_name?: string
   author_url?: string
-  content: Array<any>
+  content: ContentNode[]
   return_content?: boolean
 }
 

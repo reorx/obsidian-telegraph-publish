@@ -9,18 +9,20 @@ import {
 	App, Plugin, PluginSettingTab, Setting,
 	MarkdownView, MarkdownRenderer,
 	Modal,
-} from 'obsidian';
-import $ from 'cash-dom';
-import { Cash } from 'cash-dom';
-import TelegraphClient from './telegraph';
+} from 'obsidian'
+import $ from 'cash-dom'
+import { Cash } from 'cash-dom'
+import TelegraphClient from './telegraph'
+import {Account} from './telegraph/types'
 import { elementToContentNodes } from './telegraph/utils'
-import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter';
+import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter'
 import matter from 'gray-matter'
 
 const FRONTMATTER_KEY = {
 	telegraph_page_url: 'telegraph_page_url',
 	telegraph_page_path: 'telegraph_page_path',
 }
+
 
 enum HTMLSource {
 	Preview = 'Preview',
@@ -45,7 +47,7 @@ enum Action {
 	clear = 'clear',
 }
 
-const DEBUG: boolean = !(process.env.BUILD_ENV === 'production')
+const DEBUG = !(process.env.BUILD_ENV === 'production')
 
 function debugLog(...args: any[]) {
 	if (DEBUG) {
@@ -58,43 +60,43 @@ export default class TelegraphPublishPlugin extends Plugin {
 	debugModal: PublishModal|null
 
 	async onload() {
-		await this.loadSettings();
+		await this.loadSettings()
 		console.log('telegraph publish plugin loaded;', `DEBUG = ${DEBUG}`)
 
 		// add settings tab
-		this.addSettingTab(new SettingTab(this.app, this));
+		this.addSettingTab(new SettingTab(this.app, this))
 
 		// add sidebar button
-		this.addRibbonIcon('paper-plane', "Publish to Telegraph", async (evt: MouseEvent) => {
+		this.addRibbonIcon('paper-plane', 'Publish to Telegraph', async (evt: MouseEvent) => {
 			await this.confirmPublish()
-		});
+		})
 
 		// add command
 		this.addCommand({
 			id: 'publish-to-telegraph',
-			name: "Publish to Telegraph",
+			name: 'Publish to Telegraph',
 			callback: async () => {
 				await this.confirmPublish()
 			}
-		});
+		})
 		// add command
 		this.addCommand({
 			id: 'clear-published-content-on-telegraph',
-			name: "Clear published content on Telegraph",
+			name: 'Clear published content on Telegraph',
 			callback: async () => {
 				await this.confirmClearPublished()
 			}
-		});
+		})
 
 		// debug code
 		if (DEBUG) {
 			this.addCommand({
 				id: 'get-telegraph-page',
-				name: "Get telegraph page",
+				name: 'Get telegraph page',
 				callback: async () => {
 					await this.getActiveFilePage()
 				}
-			});
+			})
 
 			// this.debugModal = new PublishModal(this.app, this, 'confirm', {
 			// 	fileTitle: 'test'
@@ -105,7 +107,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 	async getActiveFilePage() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
-		let content = await this.app.vault.read(view.file)
+		const content = await this.app.vault.read(view.file)
 		const { data } = matter(content)
 		const pagePath = data[FRONTMATTER_KEY.telegraph_page_path]
 		if (!pagePath)
@@ -115,14 +117,14 @@ export default class TelegraphPublishPlugin extends Plugin {
 	}
 
 	async getActiveFileContent(view: MarkdownView): Promise<[string|null, string|null]> {
-		let content = await this.app.vault.read(view.file)
+		const content = await this.app.vault.read(view.file)
 		const { data } = matter(content)
 		return [content, data[FRONTMATTER_KEY.telegraph_page_path]]
 	}
 
 	ensureAccessToken(): boolean {
 		if (!this.settings.accessToken) {
-			new PublishModal(this).invalidOperation(`Please set access token or create new account in settings`).open()
+			new PublishModal(this).invalidOperation('Please set access token or create new account in settings').open()
 			return false
 		}
 		return true
@@ -133,7 +135,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
-			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
+			new PublishModal(this).invalidOperation('Cannot get active markdown view').open()
 			return
 		}
 		const [, pagePath] = await this.getActiveFileContent(view)
@@ -145,12 +147,12 @@ export default class TelegraphPublishPlugin extends Plugin {
 			return
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (!view) {
-			new PublishModal(this).invalidOperation(`Cannot get active markdown view`).open()
+			new PublishModal(this).invalidOperation('Cannot get active markdown view').open()
 			return
 		}
 		const [, pagePath] = await this.getActiveFileContent(view)
 		if (!pagePath) {
-			new PublishModal(this).invalidOperation(`This file has not been published yet`).open()
+			new PublishModal(this).invalidOperation('This file has not been published yet').open()
 			return
 		}
 		new PublishModal(this).confirm(Action.clear, view.file.basename, this.clearPublished.bind(this)).open()
@@ -179,7 +181,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			},
 		})
 		// waiht for html to update
-		await new Promise(resolve => setTimeout(resolve, 500));
+		await new Promise(resolve => setTimeout(resolve, 500))
 
 		let contentEl: HTMLElement
 		// Convert html to telegraph nodes
@@ -205,7 +207,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 				debugLog('cleanup: remove tmp-markdown-preview')
 				contentEl.remove()
 			})
-			await MarkdownRenderer.renderMarkdown(markdown, contentEl, "", null);
+			await MarkdownRenderer.renderMarkdown(markdown, contentEl, '', null)
 		}
 
 		/*
@@ -269,7 +271,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			path: pagePath,
 			title: file.basename,
 			// title: '',
-			content: ["Deleted"],
+			content: ['Deleted'],
 		}).catch(e => {
 			new PublishModal(this).error(Action.clear, e, file.basename).open()
 			throw e
@@ -285,11 +287,11 @@ export default class TelegraphPublishPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		await this.saveData(this.settings)
 	}
 
 	getClient(): TelegraphClient {
@@ -300,29 +302,29 @@ export default class TelegraphPublishPlugin extends Plugin {
 class PublishModal extends Modal {
 	plugin: TelegraphPublishPlugin
 	action: Action
-	data: any
+	data: object
 
 	constructor(plugin: TelegraphPublishPlugin) {
-		super(plugin.app);
+		super(plugin.app)
 		this.plugin = plugin
 	}
 
-	confirm(action: Action, fileTitle: string, func: () => {}): PublishModal {
+	confirm(action: Action, fileTitle: string, func: () => void): PublishModal {
 		const { contentEl, titleEl } = this
 		titleEl.innerText = `Confirm publish - ${action}`
 		switch (action) {
-			case Action.create:
-			case Action.update:
-				$(`<div class=".message">
+		case Action.create:
+		case Action.update:
+			$(`<div class=".message">
 					<p>Are you sure you want to publish <b>${fileTitle}</b> to Telegraph?</p>
 				</div>`).appendTo(contentEl)
-				break
-			case Action.clear:
-				$(`<div class=".message">
+			break
+		case Action.clear:
+			$(`<div class=".message">
 					<p>Are you sure you want to clear published content of <b>${fileTitle}</b> on Telegraph?</p>
 					<p>Note that Telegraph does not provide a delete API, the clear action just replaces the content with "Deleted" to achieve a similar result.</p>
 				</div>`).appendTo(contentEl)
-				break
+			break
 		}
 		const inputs = $('<div class=".inputs">').appendTo(contentEl)
 		inputs.append($('<button>').text('Yes').on('click', () => {
@@ -337,20 +339,20 @@ class PublishModal extends Modal {
 		const { contentEl, titleEl } = this
 		titleEl.innerText = `Publish success - ${action}`
 		switch (action) {
-			case Action.create:
-			case Action.update:
-				$(`<div class=".message">
+		case Action.create:
+		case Action.update:
+			$(`<div class=".message">
 					<p>Your article has been published (${action}) to Telegraph.</p>
 					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
 					<p>To edit the article, please open settings and open <code>auth_url</code> to login to Telegraph first</p>
 				</div>`).appendTo(contentEl)
-				break
-			case Action.clear:
-				$(`<div class=".message">
+			break
+		case Action.clear:
+			$(`<div class=".message">
 					<p>Your published article has been cleared.</p>
 					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
 				</div>`).appendTo(contentEl)
-				break
+			break
 		}
 		return this
 	}
@@ -367,7 +369,7 @@ class PublishModal extends Modal {
 
 	invalidOperation(message: string): PublishModal {
 		const { contentEl, titleEl } = this
-		titleEl.innerText = `Invalid operation`
+		titleEl.innerText = 'Invalid operation'
 		$(`<div class=".message">
 			<p>${message}</p>
 		</div>`).appendTo(contentEl)
@@ -375,7 +377,7 @@ class PublishModal extends Modal {
 	}
 
 	onClose() {
-		this.contentEl.empty();
+		this.contentEl.empty()
 	}
 }
 
@@ -384,13 +386,13 @@ const accountInfoHTML = `<div class="account-info">
 </div>`
 
 class SettingTab extends PluginSettingTab {
-	plugin: TelegraphPublishPlugin;
+	plugin: TelegraphPublishPlugin
 	accountInfoEl: Cash
 	errorEl: Cash
 
 	constructor(app: App, plugin: TelegraphPublishPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
+		super(app, plugin)
+		this.plugin = plugin
 	}
 
 	async renderAccountInfo() {
@@ -398,9 +400,9 @@ class SettingTab extends PluginSettingTab {
 		el.empty()
 		const client = this.plugin.getClient()
 		if (client.accessToken) {
-			let account
+			let account: Account
 			try {
-				account = await client.getAccountInfo() as any
+				account = await client.getAccountInfo()
 			} catch(e) {
 				this.renderError(e)
 				throw e
@@ -412,7 +414,7 @@ class SettingTab extends PluginSettingTab {
 			</ul>`)
 			el.append(ul)
 		} else {
-			el.append($(`<div>No access token</div>`))
+			el.append($('<div>No access token</div>'))
 		}
 	}
 
@@ -421,38 +423,38 @@ class SettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
-		const { containerEl } = this;
+		const { containerEl } = this
 		const plugin = this.plugin
-		containerEl.empty();
+		containerEl.empty()
 		containerEl.addClass('telegraph-publish-setting')
-		containerEl.createEl('h2', {text: 'Telegraph Account'});
+		containerEl.createEl('h2', {text: 'Telegraph Account'})
 
 		new Setting(containerEl)
 			.setName('Username')
-			.setDesc(`The username for creating Telegraph account`)
+			.setDesc('The username for creating Telegraph account')
 			.addText(text => text
 				.setValue(this.plugin.settings.username)
 				.onChange(async (value) => {
-					plugin.settings.username = value;
-					await plugin.saveSettings();
+					plugin.settings.username = value
+					await plugin.saveSettings()
 				}
-			));
+				))
 
 		new Setting(containerEl)
 			.setName('Access token')
-			.setDesc(`Telegraph access token. You can also leave it empty and click "Create new account"`)
+			.setDesc('Telegraph access token. You can also leave it empty and click "Create new account"')
 			.addText(text => text
 				.setValue(this.plugin.settings.accessToken)
 				.onChange(async (value) => {
-					plugin.settings.accessToken = value;
-					await plugin.saveSettings();
+					plugin.settings.accessToken = value
+					await plugin.saveSettings()
 					this.renderAccountInfo()
 				}
-			))
+				))
 
 		new Setting(containerEl)
 			.setName('Create new account')
-			.setDesc(`When new account is created, access token will be replaced with the new one, please backup your old access token before creating new account`)
+			.setDesc('When new account is created, access token will be replaced with the new one, please backup your old access token before creating new account')
 			.addButton(button => {
 				button
 					.setButtonText('Create new account')
@@ -473,9 +475,9 @@ class SettingTab extends PluginSettingTab {
 			})
 
 		this.accountInfoEl = $(accountInfoHTML).appendTo(containerEl)
-		this.errorEl = $(`<div class="error"></div>`).appendTo(containerEl)
+		this.errorEl = $('<div class="error"></div>').appendTo(containerEl)
 
-		containerEl.createEl('h2', {text: 'Misc'});
+		containerEl.createEl('h2', {text: 'Misc'})
 
 		new Setting(containerEl)
 			.setName('HTML Source')
@@ -488,10 +490,10 @@ class SettingTab extends PluginSettingTab {
 				.addOption(HTMLSource.MarkdownRenderer, HTMLSource.MarkdownRenderer)
 				.setValue(this.plugin.settings.htmlSource)
 				.onChange(async (value: HTMLSource) => {
-					this.plugin.settings.htmlSource = value;
-					await this.plugin.saveSettings();
+					this.plugin.settings.htmlSource = value
+					await this.plugin.saveSettings()
 				}
-			));
+				))
 
 		this.renderAccountInfo()
 	}
