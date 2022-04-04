@@ -174,27 +174,40 @@ export default class TelegraphPublishPlugin extends Plugin {
 		}
 		context.file = file
 
-		// switch view to preview mode
-		const viewState = view.leaf.getViewState()
-		await view.leaf.setViewState({
-			...viewState,
-			state: {
-				...viewState.state,
-				mode: 'preview',
-			},
-		})
-		// waiht for html to update
-		await new Promise(resolve => setTimeout(resolve, 500))
-
 		let contentEl: HTMLElement
 		// Convert html to telegraph nodes
 		if (this.settings.htmlSource === HTMLSource.Preview) {
-			// containerEl is div.markdown-reading-view
+			// switch view to preview mode
+			const viewState = view.leaf.getViewState()
+			await view.leaf.setViewState({
+				...viewState,
+				state: {
+					...viewState.state,
+					mode: 'preview',
+				},
+			})
 			const containerEl = view.previewMode.containerEl
+
+			// scroll to bottom, Obsidian's preview uses a progressive rendering mechanism
+			const scrollEl = containerEl.querySelector('.markdown-preview-view')
+			scrollEl.scrollTop = scrollEl.scrollHeight
+
+			// wait for html to update
+			await new Promise(resolve => setTimeout(resolve, 200))
+
+			// containerEl is div.markdown-reading-view
 			contentEl = containerEl.querySelector('.markdown-preview-section')
 			if (contentEl === undefined) {
 				throw new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
 			}
+			/*
+			// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
+			const $contentContainer = $(contentEl).clone()
+			$contentContainer.find('.frontmatter').remove()
+			$contentContainer.find('.frontmatter-container').remove()
+			const nodes = elementToContentNodes($contentContainer[0])
+			*/
+
 		} else {
 			const markdown = await this.app.vault.cachedRead(file)
 			debugLog(`use ${HTMLSource.MarkdownRenderer}`)
@@ -215,13 +228,6 @@ export default class TelegraphPublishPlugin extends Plugin {
 		throw 'test err'
 		*/
 
-		/*
-		// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
-		const $contentContainer = $(contentEl).clone()
-		$contentContainer.find('.frontmatter').remove()
-		$contentContainer.find('.frontmatter-container').remove()
-		const nodes = elementToContentNodes($contentContainer[0])
-		*/
 		const nodes = elementToContentNodes(contentEl)
 		debugLog('nodes', nodes)
 		// return
