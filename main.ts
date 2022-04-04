@@ -5,24 +5,22 @@
  * - [x] handle code blocks
  * - [ ] copy url to clipboard button
  */
-import {
-	App, Plugin, PluginSettingTab, Setting,
-	MarkdownView, MarkdownRenderer,
-	Modal,
-} from 'obsidian'
-import $ from 'cash-dom'
-import { Cash } from 'cash-dom'
-import TelegraphClient from './telegraph'
-import {Account} from './telegraph/types'
-import { elementToContentNodes } from './telegraph/utils'
-import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter'
+import $, { Cash } from 'cash-dom'
 import matter from 'gray-matter'
+import {
+	App, MarkdownRenderer, MarkdownView, Modal, Plugin, PluginSettingTab,
+	Setting, TFile,
+} from 'obsidian'
+import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter'
+
+import TelegraphClient from './telegraph'
+import { Account, Page } from './telegraph/types'
+import { elementToContentNodes } from './telegraph/utils'
 
 const FRONTMATTER_KEY = {
 	telegraph_page_url: 'telegraph_page_url',
 	telegraph_page_path: 'telegraph_page_path',
 }
-
 
 enum HTMLSource {
 	Preview = 'Preview',
@@ -97,11 +95,6 @@ export default class TelegraphPublishPlugin extends Plugin {
 					await this.getActiveFilePage()
 				}
 			})
-
-			// this.debugModal = new PublishModal(this.app, this, 'confirm', {
-			// 	fileTitle: 'test'
-			// })
-			// this.debugModal.open()
 		}
 	}
 
@@ -139,7 +132,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			return
 		}
 		const [, pagePath] = await this.getActiveFileContent(view)
-		new PublishModal(this).confirm(pagePath ? Action.update : Action.create, view.file.basename, this.publishActiveFile.bind(this)).open()
+		new PublishModal(this).confirm(pagePath ? Action.update : Action.create, view.file.basename, this.publishActiveFileSafe.bind(this)).open()
 	}
 
 	async confirmClearPublished() {
@@ -160,23 +153,33 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 	async publishActiveFileSafe() {
 		const cleanups: (() => void)[] = []
+		const context: ErrorContext = {}
 		try {
-			await this.publishActiveFile(cleanups)
+			await this.publishActiveFile(context, cleanups)
+		} catch (err) {
+			new PublishModal(this).error(context.action, err, context.file?.basename).open()
+			throw err
 		} finally {
 			debugLog('run cleanups for publishActiveFile() call')
 			cleanups.forEach(func => func())
 		}
 	}
 
-	async publishActiveFile(cleanups: (() => void)[]) {
+	async publishActiveFile(context: ErrorContext, cleanups: (() => void)[]) {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView)
 		const file = view.file
+		if (!file) {
+			// normally this should not happen because view has been checked in `confirmPublish()`
+			throw new Error('Cannot get file from active markdown view')
+		}
+		context.file = file
 
-		// change to preview mode
+		// switch view to preview mode
+		const viewState = view.leaf.getViewState()
 		await view.leaf.setViewState({
-			...view.leaf.getViewState(),
+			...viewState,
 			state: {
-				...view.getState(),
+				...viewState.state,
 				mode: 'preview',
 			},
 		})
@@ -190,9 +193,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 			const containerEl = view.previewMode.containerEl
 			contentEl = $(containerEl).find('.markdown-preview-section')[0]
 			if (contentEl === undefined) {
-				const err = new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
-				new PublishModal(this).error(null, err, file.basename).open()
-				throw err
+				throw new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
 			}
 		} else {
 			const markdown = await this.app.vault.cachedRead(file)
@@ -226,6 +227,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		let page, action: Action
 		if (pagePath) {
 			action = Action.update
+			context.action = action
 			// debugLog('update telegraph page')
 			// already published
 			page = await this.getClient().editPage({
@@ -233,21 +235,16 @@ export default class TelegraphPublishPlugin extends Plugin {
 				title: file.basename,
 				// title: '',
 				content: nodes,
-			}).catch(e => {
-				new PublishModal(this).error(action, e, file.basename).open()
-				throw e
 			})
 		} else {
 			action = Action.create
+			context.action = action
 			// debugLog('create telegraph page')
 			// not published yet
 			page = await this.getClient().createPage({
 				title: file.basename,
 				author_name: this.settings.username,
 				content: nodes,
-			}).catch(e => {
-				new PublishModal(this).error(action, e, file.basename).open()
-				throw e
 			})
 
 			// update frontmatter
@@ -267,15 +264,18 @@ export default class TelegraphPublishPlugin extends Plugin {
 
 		// get file content and frontmatter
 		const [, pagePath] = await this.getActiveFileContent(view)
-		const page = await this.getClient().editPage({
-			path: pagePath,
-			title: file.basename,
-			// title: '',
-			content: ['Deleted'],
-		}).catch(e => {
-			new PublishModal(this).error(Action.clear, e, file.basename).open()
-			throw e
-		})
+		let page: Page
+		try {
+			page = await this.getClient().editPage({
+				path: pagePath,
+				title: file.basename,
+				// title: '',
+				content: ['Deleted'],
+			})
+		} catch (err) {
+			new PublishModal(this).error(Action.clear, err, file.basename).open()
+			throw err
+		}
 
 		// show modal
 		debugLog('page', page.url, page)
@@ -297,6 +297,11 @@ export default class TelegraphPublishPlugin extends Plugin {
 	getClient(): TelegraphClient {
 		return new TelegraphClient(this.settings.accessToken)
 	}
+}
+
+interface ErrorContext {
+	file?: TFile
+	action?: Action
 }
 
 class PublishModal extends Modal {

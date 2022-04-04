@@ -1,5 +1,6 @@
-import {Account, PageList, Page, CreatePageData, EditPageData} from './types'
 import { requestUrl, RequestUrlParam } from 'obsidian'
+
+import { Account, CreatePageData, EditPageData, Page, PageList } from './types'
 
 const constants = {
 	API_URL: 'https://api.telegra.ph/',

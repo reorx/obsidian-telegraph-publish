@@ -16,6 +16,7 @@ module.exports = {
 		'@typescript-eslint'
 	],
 	'rules': {
+		// only for special libraries, normally you should remove this rule and configure indent by editor or editorconfig
 		'indent': [
 			'error',
 			'tab',
