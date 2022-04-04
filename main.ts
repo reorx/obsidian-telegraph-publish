@@ -21,21 +21,14 @@ const FRONTMATTER_KEY = {
 	telegraph_page_path: 'telegraph_page_path',
 }
 
-enum HTMLSource {
-	Preview = 'Preview',
-	MarkdownRenderer = 'MarkdownRenderer',
-}
-
 interface PluginSettings {
 	accessToken: string
 	username: string
-	htmlSource: HTMLSource
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	accessToken: '',
 	username: 'obsidian',
-	htmlSource: HTMLSource.Preview,
 }
 
 enum Action {
@@ -175,59 +168,25 @@ export default class TelegraphPublishPlugin extends Plugin {
 		context.file = file
 
 		let contentEl: HTMLElement
-		// Convert html to telegraph nodes
-		if (this.settings.htmlSource === HTMLSource.Preview) {
-			// switch view to preview mode
-			const viewState = view.leaf.getViewState()
-			await view.leaf.setViewState({
-				...viewState,
-				state: {
-					...viewState.state,
-					mode: 'preview',
-				},
-			})
-			const containerEl = view.previewMode.containerEl
-
-			// scroll to bottom, Obsidian's preview uses a progressive rendering mechanism
-			const scrollEl = containerEl.querySelector('.markdown-preview-view')
-			scrollEl.scrollTop = scrollEl.scrollHeight
-
-			// wait for html to update
-			await new Promise(resolve => setTimeout(resolve, 200))
-
-			// containerEl is div.markdown-reading-view
-			contentEl = containerEl.querySelector('.markdown-preview-section')
-			if (contentEl === undefined) {
-				throw new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
+		// Get HTML from rendering source markdown
+		const markdown = await this.app.vault.cachedRead(file)
+		contentEl = view.containerEl.createDiv({
+			cls: 'tmp-markdown-preview',
+			attr: {
+				style: 'display: none;'
 			}
-			/*
-			// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
-			const $contentContainer = $(contentEl).clone()
-			$contentContainer.find('.frontmatter').remove()
-			$contentContainer.find('.frontmatter-container').remove()
-			const nodes = elementToContentNodes($contentContainer[0])
-			*/
-
-		} else {
-			const markdown = await this.app.vault.cachedRead(file)
-			debugLog(`use ${HTMLSource.MarkdownRenderer}`)
-			contentEl = view.containerEl.createDiv({
-				cls: 'tmp-markdown-preview',
-				attr: {
-					style: 'display: none;'
-				}
-			})
-			cleanups.push(() => {
-				debugLog('cleanup: remove tmp-markdown-preview')
-				contentEl.remove()
-			})
-			await MarkdownRenderer.renderMarkdown(markdown, contentEl, '', null)
-		}
+		})
+		cleanups.push(() => {
+			debugLog('cleanup: remove tmp-markdown-preview')
+			contentEl.remove()
+		})
+		await MarkdownRenderer.renderMarkdown(markdown, contentEl, '', null)
 		/* DEBUG test error
 		context.action = Action.create
 		throw 'test err'
 		*/
 
+		// Convert html to telegraph nodes
 		const nodes = elementToContentNodes(contentEl)
 		debugLog('nodes', nodes)
 		// return
@@ -542,24 +501,6 @@ class SettingTab extends PluginSettingTab {
 		this.accountInfoEl = accountInfoWrapper.createDiv()
 
 		this.errorEl = containerEl.createDiv({cls: 'error'})
-
-		containerEl.createEl('h2', {text: 'Misc'})
-
-		new Setting(containerEl)
-			.setName('HTML Source')
-			.setDesc(`Choose how to get HTML for publishing.
-				Preview: directly get HTML in preview mode;
-				MarkdownRenderer: render HTML from markdown text,
-				this option will disable the effects other plugins made to preview mode.`)
-			.addDropdown(dropdown => dropdown
-				.addOption(HTMLSource.Preview, HTMLSource.Preview)
-				.addOption(HTMLSource.MarkdownRenderer, HTMLSource.MarkdownRenderer)
-				.setValue(this.plugin.settings.htmlSource)
-				.onChange(async (value: HTMLSource) => {
-					this.plugin.settings.htmlSource = value
-					await this.plugin.saveSettings()
-				}
-				))
 
 		this.renderAccountInfo()
 	}
