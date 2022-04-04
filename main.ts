@@ -3,9 +3,8 @@
  * - [ ] upload images
  * - [x] handle internal links
  * - [x] handle code blocks
- * - [ ] copy url to clipboard button
+ * - [x] copy url to clipboard button
  */
-import $, { Cash } from 'cash-dom'
 import matter from 'gray-matter'
 import {
 	App, MarkdownRenderer, MarkdownView, Modal, Plugin, PluginSettingTab,
@@ -58,8 +57,9 @@ export default class TelegraphPublishPlugin extends Plugin {
 	debugModal: PublishModal|null
 
 	async onload() {
+		const pkg = require('package.json')
+		console.log(`Plugin loading: ${pkg.name} ${pkg.version}`, `DEBUG = ${DEBUG}`)
 		await this.loadSettings()
-		console.log('telegraph publish plugin loaded;', `DEBUG = ${DEBUG}`)
 
 		// add settings tab
 		this.addSettingTab(new SettingTab(this.app, this))
@@ -191,7 +191,7 @@ export default class TelegraphPublishPlugin extends Plugin {
 		if (this.settings.htmlSource === HTMLSource.Preview) {
 			// containerEl is div.markdown-reading-view
 			const containerEl = view.previewMode.containerEl
-			contentEl = $(containerEl).find('.markdown-preview-section')[0]
+			contentEl = containerEl.querySelector('.markdown-preview-section')
 			if (contentEl === undefined) {
 				throw new Error(`Could not get element in preview, try to use "${HTMLSource.MarkdownRenderer}" for "HTML source" in settings`)
 			}
@@ -210,6 +210,10 @@ export default class TelegraphPublishPlugin extends Plugin {
 			})
 			await MarkdownRenderer.renderMarkdown(markdown, contentEl, '', null)
 		}
+		/* DEBUG test error
+		context.action = Action.create
+		throw 'test err'
+		*/
 
 		/*
 		// clone and preprocess (this causes innerText behaves like textContent, which is bad for table)
@@ -320,23 +324,33 @@ class PublishModal extends Modal {
 		switch (action) {
 		case Action.create:
 		case Action.update:
-			$(`<div class=".message">
-					<p>Are you sure you want to publish <b>${fileTitle}</b> to Telegraph?</p>
-				</div>`).appendTo(contentEl)
+			contentEl.createEl('p', {
+				text: `Are you sure you want to publish "${fileTitle}" to Telegraph?`,
+			})
 			break
 		case Action.clear:
-			$(`<div class=".message">
-					<p>Are you sure you want to clear published content of <b>${fileTitle}</b> on Telegraph?</p>
-					<p>Note that Telegraph does not provide a delete API, the clear action just replaces the content with "Deleted" to achieve a similar result.</p>
-				</div>`).appendTo(contentEl)
+			contentEl.createEl('p', {
+				text: `Are you sure you want to clear published content of "${fileTitle}" on Telegraph?`,
+			})
+			contentEl.createEl('p', {
+				text: 'Note that Telegraph does not provide a delete API, the clear action just replaces the content with "Deleted" to achieve a similar result.'
+			})
 			break
 		}
-		const inputs = $('<div class=".inputs">').appendTo(contentEl)
-		inputs.append($('<button>').text('Yes').on('click', () => {
-			this.close()
-			func()
-		}))
-		inputs.append($('<button>').text('No').on('click', () => this.close()))
+		new Setting(contentEl)
+			.addButton(button => {
+				button
+					.setButtonText('Yes')
+					.onClick(() => {
+						this.close()
+						func()
+					})
+			})
+			.addButton(button => {
+				button
+					.setButtonText('No')
+					.onClick(() => { this.close() })
+			})
 		return this
 	}
 
@@ -346,17 +360,42 @@ class PublishModal extends Modal {
 		switch (action) {
 		case Action.create:
 		case Action.update:
-			$(`<div class=".message">
-					<p>Your article has been published (${action}) to Telegraph.</p>
-					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
-					<p>To edit the article, please open settings and open <code>auth_url</code> to login to Telegraph first</p>
-				</div>`).appendTo(contentEl)
+			contentEl.createEl('p', {
+				text: `Your article has been published (${action}) to Telegraph.`
+			})
+			contentEl.createEl('p')
+				.createEl('a', {
+					text: fileTitle,
+					attr: {
+						href: pageUrl,
+						target: '_blank',
+					}
+				})
+			contentEl.createEl('p', {
+				text: 'To edit the article, please open settings and open "auth_url" to login to Telegraph first'
+			})
+			new Setting(contentEl)
+				.addButton(button => {
+					button
+						.setButtonText('Copy URL')
+						.onClick(() => {
+							navigator.clipboard.writeText(pageUrl)
+							button.setButtonText('Copied')
+						})
+				})
 			break
 		case Action.clear:
-			$(`<div class=".message">
-					<p>Your published article has been cleared.</p>
-					<p><a href="${pageUrl}" target="_blank">${fileTitle}</a></p>
-				</div>`).appendTo(contentEl)
+			contentEl.createEl('p', {
+				text: 'Your published article has been cleared.',
+			})
+			contentEl.createEl('p')
+				.createEl('a', {
+					text: fileTitle,
+					attr: {
+						href: pageUrl,
+						target: '_blank',
+					}
+				})
 			break
 		}
 		return this
@@ -365,19 +404,22 @@ class PublishModal extends Modal {
 	error(action: Action|null, error: Error, fileTitle: string): PublishModal {
 		const { contentEl, titleEl } = this
 		titleEl.innerText = `Publish failed - ${action || 'unknown'}`
-		$(`<div class=".message">
-			<p>Failed to publish <b>${fileTitle}</b>, error:</p>
-			<pre><code>${error}</pre></code>
-		</div>`).appendTo(contentEl)
+		contentEl.createEl('p', {
+			text: `Failed to publish "${fileTitle}", error:`
+		})
+		contentEl.createEl('pre')
+			.createEl('code', {
+				text: error.toString()
+			})
 		return this
 	}
 
 	invalidOperation(message: string): PublishModal {
 		const { contentEl, titleEl } = this
+		contentEl.createEl('p', {
+			text: message,
+		})
 		titleEl.innerText = 'Invalid operation'
-		$(`<div class=".message">
-			<p>${message}</p>
-		</div>`).appendTo(contentEl)
 		return this
 	}
 
@@ -386,14 +428,10 @@ class PublishModal extends Modal {
 	}
 }
 
-const accountInfoHTML = `<div class="account-info">
-	<div class="title">Account Info:</div>
-</div>`
-
 class SettingTab extends PluginSettingTab {
 	plugin: TelegraphPublishPlugin
-	accountInfoEl: Cash
-	errorEl: Cash
+	accountInfoEl: HTMLElement
+	errorEl: HTMLElement
 
 	constructor(app: App, plugin: TelegraphPublishPlugin) {
 		super(app, plugin)
@@ -402,7 +440,8 @@ class SettingTab extends PluginSettingTab {
 
 	async renderAccountInfo() {
 		const el = this.accountInfoEl
-		el.empty()
+		el.innerHTML = ''
+
 		const client = this.plugin.getClient()
 		if (client.accessToken) {
 			let account: Account
@@ -413,18 +452,28 @@ class SettingTab extends PluginSettingTab {
 				throw e
 			}
 			debugLog('get account', account)
-			const ul = $(`<ul>
-				<li><code>short_name</code>: ${account.short_name}</li>
-				<li><code>auth_url</code>: <a href="${account.auth_url}">${account.auth_url}</a></li>
-			</ul>`)
-			el.append(ul)
+			const ul = el.createEl('ul')
+			ul.createEl('li', {
+				text: `short_name: ${account.short_name}`,
+			})
+			const authUrlLi = ul.createEl('li', {
+			})
+			authUrlLi.createEl('span', {
+				text: 'auth_url: ',
+			})
+			authUrlLi.createEl('a', {
+				text: account.auth_url,
+				href: account.auth_url,
+			})
 		} else {
-			el.append($('<div>No access token</div>'))
+			el.createEl('p', {
+				text: 'No access token'
+			})
 		}
 	}
 
 	renderError(err: Error) {
-		this.errorEl.text(err.message)
+		this.errorEl.innerText = err.toString()
 	}
 
 	display(): void {
@@ -479,8 +528,14 @@ class SettingTab extends PluginSettingTab {
 				return button
 			})
 
-		this.accountInfoEl = $(accountInfoHTML).appendTo(containerEl)
-		this.errorEl = $('<div class="error"></div>').appendTo(containerEl)
+		const accountInfoWrapper = containerEl.createDiv({cls: 'account-info'})
+		accountInfoWrapper.createDiv({
+			cls: 'title',
+			text: 'Account Info:',
+		})
+		this.accountInfoEl = accountInfoWrapper.createDiv()
+
+		this.errorEl = containerEl.createDiv({cls: 'error'})
 
 		containerEl.createEl('h2', {text: 'Misc'})
 
