@@ -141,7 +141,7 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 		for (let i = 0; i < children.length; i++) {
 			const child = children[i]
 			if (isString(child)) {
-				nodeElement.children[i] = {
+				children[i] = {
 					tag: 'strong',
 					children: [child],
 				}
