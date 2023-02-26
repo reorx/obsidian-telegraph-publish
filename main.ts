@@ -7,14 +7,15 @@
  */
 import matter from 'gray-matter'
 import {
-	App, MarkdownRenderer, MarkdownView, Modal, Plugin, PluginSettingTab,
-	Setting, TFile,
+	App, MarkdownRenderer, MarkdownView, Modal, Plugin, PluginSettingTab, Setting,
+	TFile,
 } from 'obsidian'
 import { updateKeyInFrontMatter } from 'updateKeyInFrontMatter'
 
 import TelegraphClient from './telegraph'
 import { Account, Page } from './telegraph/types'
 import { elementToContentNodes } from './telegraph/utils'
+
 
 const FRONTMATTER_KEY = {
 	telegraph_page_url: 'telegraph_page_url',
@@ -167,10 +168,9 @@ export default class TelegraphPublishPlugin extends Plugin {
 		}
 		context.file = file
 
-		let contentEl: HTMLElement
 		// Get HTML from rendering source markdown
 		const markdown = await this.app.vault.cachedRead(file)
-		contentEl = view.containerEl.createDiv({
+		const contentEl = view.containerEl.createDiv({
 			cls: 'tmp-markdown-preview',
 			attr: {
 				style: 'display: none;'
