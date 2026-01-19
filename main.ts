@@ -1,6 +1,6 @@
 /* TODO
  * - [x] delete page (by submiting a "Deleted at" in content)
- * - [ ] upload images
+ * - [ ] upload images (as images on telegra.ph embedding directly from external website, use '![](url)' to embed image)
  * - [x] handle internal links
  * - [x] handle code blocks
  * - [x] copy url to clipboard button
@@ -108,6 +108,56 @@ export default class TelegraphPublishPlugin extends Plugin {
 		const { data } = matter(content)
 		return [content, data[FRONTMATTER_KEY.telegraph_page_path]]
 	}
+	
+	/**
+	 * Convert Obsidian internal links (e.g. [[Some note]]) to Telegraph URLs if the
+	 * target note has `telegraph_page_url` in its frontmatter.
+	 *
+	 * Notes:
+	 * - We only touch links that point to *other* files.
+	 * - Links to headings inside the current file (e.g. [[#Heading]]) are left as-is.
+	 * - If the target note doesn't have `telegraph_page_url`, we fall back to '#'
+	 */
+	private async rewriteInternalLinks(containerEl: HTMLElement, sourceFile: TFile): Promise<void> {
+		const linkEls = Array.from(containerEl.querySelectorAll('a.internal-link')) as HTMLAnchorElement[]
+		if (linkEls.length === 0) return
+
+		// Cache per target file path to avoid repeated metadata lookups.
+		const urlByPath = new Map<string, string | null>()
+
+		for (const a of linkEls) {
+			// In reading mode Obsidian typically stores the wikilink target in data-href.
+			// Fallback to href if data-href is missing.
+			const raw = (a.getAttribute('data-href') ?? a.getAttribute('href') ?? '').trim()
+			if (!raw) continue
+
+			// Keep in-file heading links like [[#Heading]] untouched.
+			if (raw.startsWith('#')) continue
+
+			// Remove any heading part (e.g. "Note#Heading"). Telegraph doesn't reliably
+			// support heading anchors, so we link to the page itself.
+			const linkPath = raw.split('#')[0].trim()
+			if (!linkPath) continue
+
+			const dest = this.app.metadataCache.getFirstLinkpathDest(linkPath, sourceFile.path)
+			if (!dest) {
+				// unresolved internal link
+				a.setAttribute('href', '#')
+				continue
+			}
+
+			let telegraphUrl: string | null
+			if (urlByPath.has(dest.path)) {
+				telegraphUrl = urlByPath.get(dest.path)!
+			} else {
+				const cache = this.app.metadataCache.getFileCache(dest)
+				telegraphUrl = (cache?.frontmatter?.[FRONTMATTER_KEY.telegraph_page_url] as string | undefined) ?? null
+				urlByPath.set(dest.path, telegraphUrl)
+			}
+
+			a.setAttribute('href', telegraphUrl ?? '#')
+		}
+	}
 
 	ensureAccessToken(): boolean {
 		if (!this.settings.accessToken) {
@@ -185,6 +235,11 @@ export default class TelegraphPublishPlugin extends Plugin {
 		context.action = Action.create
 		throw 'test err'
 		*/
+		
+		// Rewrite Obsidian internal links before converting HTML -> Telegraph nodes.
+		// This lets us turn [[Some note]] into a link to that note's `telegraph_page_url`
+		// (if present in its frontmatter), instead of linking to "#" (self).
+		await this.rewriteInternalLinks(contentEl, file)
 
 		// Convert html to telegraph nodes
 		const nodes = elementToContentNodes(contentEl)

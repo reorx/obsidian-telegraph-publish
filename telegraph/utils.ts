@@ -49,6 +49,16 @@ const elementToNodeElement = (el: HTMLElement): [NodeElement | null, string] => 
 	if (Object.keys(attrs).length > 0) {
 		nodeElement.attrs = attrs
 	}
+	
+	// ensure <img> has a real src ---
+	if (nodeElement.tag === 'img') {
+	  const src = el.getAttribute('src') || (el as HTMLImageElement).src
+	  if (src && src.length > 0) {
+		nodeElement.attrs = nodeElement.attrs ?? {}
+		nodeElement.attrs.src = src
+	  }
+	}
+
 
 	return [nodeElement, tag]
 }
@@ -58,6 +68,41 @@ function trimLineBreak(s: string): string {
 }
 
 export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boolean|null = null, parentTag: string | null = null): Array<ContentNode> {
+	  // --- CONVERT QUOTES ---
+	  // > [!quote] 
+	  // > Text.
+	  // will convert into <aside>Text.</aside> on telegraph
+	  if (el instanceof HTMLElement) {
+		const tag = el.tagName.toLowerCase()
+
+		// Obsidian callout:
+		// <div class="callout" data-callout="quote"> ... <div class="callout-content">...</div> </div>
+		if (tag === 'div' && el.classList.contains('callout') && el.getAttribute('data-callout') === 'quote') {
+		  const contentEl = el.querySelector(':scope > .callout-content') as HTMLElement | null
+
+		  // If no content wrapper found, fallback to unwrapping children
+		  if (!contentEl) {
+			const nodes: Array<ContentNode> = []
+			for (const child of el.childNodes) {
+			  nodes.push(...elementToContentNodes(child as any, true, parentTag))
+			}
+			return nodes
+		  }
+
+		  const children: Array<ContentNode> = []
+		  // unwrapBlock=true so that <p> inside callout-content does not become a nested paragraph,
+		  // and we get clean inline content inside <aside>.
+		  for (const child of contentEl.childNodes) {
+			children.push(...elementToContentNodes(child as any, true, null))
+		  }
+
+		  return [{
+			tag: 'aside',
+			children,
+		  }]
+		}
+	  }
+	
 	if (el instanceof Text) {
 		const text = el.data
 		if (text.trim().length === 0) {
@@ -81,6 +126,62 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 		return []
 	if (el.hasClass('frontmatter-container'))
 		return []
+	
+	// --- CONVERT IMAGE + ITALIC CAPTION INSIDE SAME <p> INTO <figure><figcaption> ---
+	// Rebuilding figure; taking next *itallic text* (if there are no empty line before it) as figure caption.
+	if (el.tagName.toLowerCase() === 'p') {
+	  const childNodes = Array.from(el.childNodes)
+
+	  // Берем первый IMG и первый EM (важно: в этом же <p>)
+	  const imgEl = el.querySelector(':scope > img') as HTMLElement | null
+	  const emEl = el.querySelector(':scope > em') as HTMLElement | null
+
+	  if (imgEl && emEl) {
+		// Проверим, что кроме IMG/BR/EM нет ничего значимого (кроме пробелов)
+		const meaningful = childNodes.filter((n) => {
+		  if (n.nodeType === Node.TEXT_NODE) {
+			return (n.textContent ?? '').trim().length > 0
+		  }
+		  if (n.nodeType === Node.ELEMENT_NODE) {
+			const t = (n as HTMLElement).tagName.toLowerCase()
+			return t !== 'img' && t !== 'br' && t !== 'em'
+		  }
+		  return true
+		})
+
+		if (meaningful.length === 0) {
+		  const src =
+			  (imgEl as HTMLImageElement).getAttribute('src') ||
+			  (imgEl as HTMLImageElement).src
+
+			const imgNodes: Array<ContentNode> = src
+			  ? [{ tag: 'img', attrs: { src } }]
+			  : []
+
+		  const captionChildren: Array<ContentNode> = []
+
+		  // Возьмем содержимое <em> (сохраняет, например, внутренние ссылки/strong и т.п.)
+		  for (const c of Array.from(emEl.childNodes)) {
+			captionChildren.push(...elementToContentNodes(c as any, true, null))
+		  }
+
+		  // Если подпись оказалась пустой — не мешаем обычному рендеру
+		  if (captionChildren.length > 0) {
+			return [{
+			  tag: 'figure',
+			  children: [
+				...imgNodes,
+				{
+				  tag: 'figcaption',
+				  children: captionChildren,
+				},
+			  ],
+			}]
+		  }
+		}
+	  }
+	}
+
 
 	const [nodeElement, tag] = elementToNodeElement(el)
 	let shouldUnwrap = !nodeElement
@@ -119,10 +220,13 @@ export function elementToContentNodes(el: HTMLElement | Text, unwrapBlock: boole
 			return []
 		break
 	case 'a':
-		// handle internal links
-		if (el.hasClass('internal-link')) {
-			nodeElement.attrs.href = '#'
-		}
+		// Internal links NOW are rewritten upstream (in main.ts) before we get here.
+		// Do not clobber href for <a class="internal-link">.
+		
+		// Old logic (handle internal links):
+		// if (el.hasClass('internal-link')) {
+		// 	nodeElement.attrs.href = '#'
+		// }
 		break
 	}
 

@@ -8,7 +8,7 @@ Features:
 - Clear published content of the active file.
 
 Upcoming:
-- [ ] Support image uploading.
+- [ ] Support image uploading. (as images on telegra.ph embedding directly from external website, now use '![](url)' to embed image)
 
 ## Installation
 
